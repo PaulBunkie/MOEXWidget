@@ -26,6 +26,16 @@
                 android:resource="@xml/widget_info" />
         </receiver>
 
+        <activity
+            android:name=".widget.WidgetConfigActivity"
+            android:exported="true"
+            android:label="Настройка виджета"
+            android:theme="@style/Theme.MOEXWidget">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".worker.WidgetUpdateService"
             android:exported="false" />

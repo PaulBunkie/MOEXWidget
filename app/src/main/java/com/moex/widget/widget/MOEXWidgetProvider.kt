@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import android.widget.RemoteViews
 import com.moex.widget.R
 import com.moex.widget.worker.WidgetUpdateService
@@ -42,8 +43,10 @@ class MOEXWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
+        Log.d(TAG, "onReceive: action=${intent.action}")
 
         if (ACTION_MANUAL_REFRESH == intent.action) {
+            Log.d(TAG, "Manual refresh triggered by tap!")
             // Manual refresh triggered by tapping the widget
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val thisWidget = ComponentName(context, MOEXWidgetProvider::class.java)
@@ -56,12 +59,13 @@ class MOEXWidgetProvider : AppWidgetProvider() {
     }
 
     private fun triggerRefresh(context: Context, appWidgetId: Int) {
-        val ticker = getTickerForWidget(context, appWidgetId)
+        val instrumentKey = getInstrumentForWidget(context, appWidgetId)
+        Log.d(TAG, "triggerRefresh: appWidgetId=$appWidgetId, instrumentKey=$instrumentKey")
 
         // Enqueue work for background refresh
         WidgetUpdateWorker.enqueueRefresh(
             context,
-            ticker,
+            instrumentKey,
             intArrayOf(appWidgetId)
         )
     }
@@ -72,13 +76,18 @@ class MOEXWidgetProvider : AppWidgetProvider() {
         const val EXTRA_APPWIDGET_IDS = "appWidgetIds"
 
         /**
-         * Returns the ticker symbol for a given widget instance.
-         * Currently returns default SBER, can be extended for per-widget preferences.
+         * Returns the instrument key for a given widget instance.
+         * Defaults to "STOCK:SBER" if no instrument is configured.
          */
-        private fun getTickerForWidget(context: Context, appWidgetId: Int): String {
+        private fun getInstrumentForWidget(context: Context, appWidgetId: Int): String {
             val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
-            return prefs.getString("ticker_$appWidgetId", "SBER") ?: "SBER"
+            val key = "instrument_$appWidgetId"
+            val value = prefs.getString(key, "STOCK:SBER") ?: "STOCK:SBER"
+            Log.d(TAG, "getInstrumentForWidget: key=$key, value=$value")
+            return value
         }
+
+        private const val TAG = "MOEXWidgetProvider"
 
         /**
          * Sets up click handling on the widget to trigger manual refresh.

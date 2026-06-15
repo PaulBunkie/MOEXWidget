@@ -27,7 +27,9 @@ class ChartRenderer(
     private val gridColor = Color.parseColor("#E0E0E0")
     private val textColor = Color.parseColor("#666666")
     private val positiveColor = Color.parseColor("#4CAF50") // Green
-    private val negativeColor = Color.parseColor("#F44336") // Red
+    private val negativeColor = Color.parseColor("#E91E63") // Pink/Rose for falling
+    private val positiveFillAlpha = 30
+    private val negativeFillAlpha = 30
 
     // Paints
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -93,17 +95,22 @@ class ChartRenderer(
         val trendColor = if (isPositive) positiveColor else negativeColor
         linePaint.color = trendColor
 
-        // Draw horizontal grid lines
+        // Fill color with alpha
+        val fillAlpha = if (isPositive) positiveFillAlpha else negativeFillAlpha
+
+        // Draw horizontal grid lines (skip top label to avoid artifacts)
         val gridLines = 4
         for (i in 0..gridLines) {
             val y = chartRect.top + (chartRect.height() * i / gridLines)
             canvas.drawLine(chartRect.left, y, chartRect.right, y, gridPaint)
 
-            // Price labels
-            val price = maxPrice - (priceRange * i / gridLines)
-            textPaint.textSize = 20f
-            val priceText = decimalFormat.format(price)
-            canvas.drawText(priceText, chartRect.right - textPaint.measureText(priceText) - 2f, y - 2f, textPaint)
+            // Price labels (skip the first/top one to avoid artifacts)
+            if (i > 0) {
+                val price = maxPrice - (priceRange * i / gridLines)
+                textPaint.textSize = 20f
+                val priceText = decimalFormat.format(price)
+                canvas.drawText(priceText, chartRect.right - textPaint.measureText(priceText) - 2f, y - 2f, textPaint)
+            }
         }
 
         // Draw vertical grid + time labels (show ~4-6 labels)
@@ -151,7 +158,7 @@ class ChartRenderer(
             fillPath.lineTo(chartRect.left, chartRect.bottom)
             fillPath.close()
 
-            fillPaint.color = Color.argb(30, Color.red(trendColor), Color.green(trendColor), Color.blue(trendColor))
+            fillPaint.color = Color.argb(fillAlpha, Color.red(trendColor), Color.green(trendColor), Color.blue(trendColor))
             canvas.drawPath(fillPath, fillPaint)
 
             // Draw dots on data points (if not too many)

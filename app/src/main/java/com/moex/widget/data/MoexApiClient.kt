@@ -15,8 +15,9 @@ import java.util.concurrent.TimeUnit
 /**
  * Client for Moscow Exchange ISS API.
  * Fetches historical candle data for a given ticker.
+ * Implements PriceProvider interface for the widget data pipeline.
  */
-class MoexApiClient(context: Context) {
+class MoexApiClient(context: Context, private val ticker: String = "SBER") : PriceProvider {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -37,6 +38,15 @@ class MoexApiClient(context: Context) {
         val network = connectivityManager.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    override fun getDisplayName(): String = ticker
+
+    /**
+     * Fetches 24-hour candle data using the PriceProvider interface.
+     */
+    override fun fetch24hCandles(): Result<List<Candle>> {
+        return fetchCandles(ticker, 60)
     }
 
     /**
