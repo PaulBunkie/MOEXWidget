@@ -1,5 +1,6 @@
 package com.moex.widget.worker
 
+import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -20,10 +21,6 @@ import com.moex.widget.data.MoexApiClient
 import com.moex.widget.data.PriceProvider
 import java.util.concurrent.TimeUnit
 
-/**
- * WorkManager-based worker that fetches data and updates the widget.
- * Runs periodically (~1 hour) and also on-demand for manual refresh.
- */
 class WidgetUpdateWorker(
     context: Context,
     params: WorkerParameters
@@ -44,21 +41,14 @@ class WidgetUpdateWorker(
         }
 
         val provider: PriceProvider = when (instrument) {
-            is Instrument.Stock -> {
-                Log.d(TAG, "Using MoexApiClient for ticker: ${instrument.ticker}")
-                MoexApiClient(applicationContext, instrument.ticker)
-            }
-            is Instrument.Crypto -> {
-                Log.d(TAG, "Using CryptoProvider for symbol: ${instrument.symbol}")
-                CryptoProvider(applicationContext, instrument.symbol)
-            }
+            is Instrument.Stock -> MoexApiClient(applicationContext, instrument.ticker)
+            is Instrument.Crypto -> CryptoProvider(applicationContext, instrument.symbol)
         }
 
         val displayName = provider.getDisplayName()
         Log.d(TAG, "displayName=$displayName")
 
         return try {
-            // Try to fetch fresh data from API
             val result = provider.fetch24hCandles()
             val candles = if (result.isSuccess) {
                 val freshCandles = result.getOrThrow()
@@ -66,13 +56,12 @@ class WidgetUpdateWorker(
                 freshCandles
             } else {
                 Log.w(TAG, "API fetch failed: ${result.exceptionOrNull()?.message}")
-                // Fallback to cache
                 val cached = cacheManager.loadCandles(instrumentKey)
                 if (cached != null) {
                     Log.d(TAG, "Using cached data: ${cached.size} candles")
                     cached
                 } else {
-                    Log.e(TAG, "No data available at all")
+                    Log.e(TAG, "No data available")
                     updateWidgetWithError(displayName, applicationContext, appWidgetIds)
                     return Result.success()
                 }
@@ -80,60 +69,74 @@ class WidgetUpdateWorker(
 
             Log.d(TAG, "Fetched ${candles.size} candles, last price=${candles.last().close}")
 
-            // Render chart bitmap
-            val displayMetrics = applicationContext.resources.displayMetrics
-            val chartWidth = (250 * displayMetrics.density).toInt()
-            val chartHeight = (100 * displayMetrics.density).toInt()
-            val renderer = ChartRenderer(chartWidth, chartHeight)
-            val bitmap = renderer.render(candles)
+            // Read widget size from SharedPreferences
+            val isSmallWidget = if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
+                val prefs = applicationContext.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
+                prefs.getBoolean("small_${appWidgetIds[0]}", false)
+            } else false
 
-            // Update widget
-            val remoteViews = RemoteViews(
-                applicationContext.packageName,
-                R.layout.widget_layout
-            )
+            // Generate DIFFERENT bitmaps for different widget sizes
+            val displayMetrics = applicationContext.resources.displayMetrics
+            val bitmap: Bitmap? = if (isSmallWidget) {
+                // 2x2: SQUARE bitmap
+                val size = (200 * displayMetrics.density).toInt()
+                Log.d(TAG, "Rendering SMALL square bitmap: ${size}x${size}")
+                val renderer = ChartRenderer(size, size, showLabels = true)
+                renderer.render(candles)
+            } else {
+                // 3x2/4x2: WIDE bitmap
+                val chartWidth = (250 * displayMetrics.density).toInt()
+                val chartHeight = (100 * displayMetrics.density).toInt()
+                Log.d(TAG, "Rendering LARGE wide bitmap: ${chartWidth}x${chartHeight}")
+                val renderer = ChartRenderer(chartWidth, chartHeight, showLabels = true)
+                renderer.render(candles)
+            }
+
+            val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
+            val remoteViews = RemoteViews(applicationContext.packageName, layoutRes)
 
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
-            remoteViews.setTextViewText(
-                R.id.price_text,
-                String.format("%.2f", candles.last().close)
-            )
+            remoteViews.setTextViewText(R.id.price_text, String.format("%.2f", candles.last().close))
 
             if (bitmap != null) {
                 remoteViews.setImageViewBitmap(R.id.chart_image, bitmap)
             }
 
-            // Apply updates to all widget instances
-            val widgetManager = android.appwidget.AppWidgetManager.getInstance(applicationContext)
-            val ids = appWidgetIds ?: widgetManager.getAppWidgetIds(
-                android.content.ComponentName(
-                    applicationContext,
-                    com.moex.widget.widget.MOEXWidgetProvider::class.java
-                )
-            )
-
-            // Set up tap-to-refresh on all widget views
-            for (id in ids) {
-                com.moex.widget.widget.MOEXWidgetProvider.updateWidgetClickHandler(
-                    applicationContext, remoteViews, id
-                )
+            // Set up tap-to-refresh
+            if (appWidgetIds != null) {
+                for (id in appWidgetIds) {
+                    val providerClass = if (isSmallWidget) {
+                        com.moex.widget.widget.MOEXWidgetProviderSmall::class.java
+                    } else {
+                        com.moex.widget.widget.MOEXWidgetProvider::class.java
+                    }
+                    providerClass.getMethod(
+                        "updateWidgetClickHandler",
+                        Context::class.java,
+                        RemoteViews::class.java,
+                        Int::class.javaPrimitiveType
+                    ).invoke(null, applicationContext, remoteViews, id)
+                }
             }
 
+            // Update widgets
+            val widgetManager = android.appwidget.AppWidgetManager.getInstance(applicationContext)
+            val ids = appWidgetIds ?: widgetManager.getAppWidgetIds(
+                ComponentName(applicationContext, com.moex.widget.widget.MOEXWidgetProvider::class.java)
+            )
             widgetManager.updateAppWidget(ids, remoteViews)
-            Log.d(TAG, "Widget updated successfully for $displayName")
+            Log.d(TAG, "Widget updated: $displayName (small=$isSmallWidget)")
 
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Error in doWork", e)
-            // Try cached data as fallback
             val cached = cacheManager.loadCandles(instrumentKey)
             if (cached != null) {
                 updateWidgetWithData(displayName, cached, applicationContext, appWidgetIds)
-                Result.success()
             } else {
                 updateWidgetWithError(displayName, applicationContext, appWidgetIds)
-                Result.success()
             }
+            Result.success()
         }
     }
 
@@ -144,9 +147,6 @@ class WidgetUpdateWorker(
         private const val DEFAULT_TICKER = "SBER"
         private const val DEFAULT_INSTRUMENT_KEY = "STOCK:SBER"
 
-        /**
-         * Schedules periodic widget updates every ~60 minutes.
-         */
         fun schedulePeriodic(context: Context) {
             val workRequest = PeriodicWorkRequestBuilder<WidgetUpdateWorker>(
                 60, TimeUnit.MINUTES
@@ -161,9 +161,6 @@ class WidgetUpdateWorker(
             )
         }
 
-        /**
-         * Enqueues an immediate one-time refresh.
-         */
         fun enqueueRefresh(context: Context, instrumentKey: String, appWidgetIds: IntArray?) {
             val inputData = androidx.work.Data.Builder()
                 .putString(KEY_INSTRUMENT, instrumentKey)
@@ -186,7 +183,7 @@ class WidgetUpdateWorker(
             val displayMetrics = context.resources.displayMetrics
             val chartWidth = (250 * displayMetrics.density).toInt()
             val chartHeight = (100 * displayMetrics.density).toInt()
-            val renderer = ChartRenderer(chartWidth, chartHeight)
+            val renderer = ChartRenderer(chartWidth, chartHeight, showLabels = true)
             val bitmap = renderer.render(candles)
 
             val remoteViews = RemoteViews(context.packageName, R.layout.widget_layout)
@@ -199,10 +196,7 @@ class WidgetUpdateWorker(
 
             val widgetManager = android.appwidget.AppWidgetManager.getInstance(context)
             val ids = appWidgetIds ?: widgetManager.getAppWidgetIds(
-                android.content.ComponentName(
-                    context,
-                    com.moex.widget.widget.MOEXWidgetProvider::class.java
-                )
+                ComponentName(context, com.moex.widget.widget.MOEXWidgetProvider::class.java)
             )
             widgetManager.updateAppWidget(ids, remoteViews)
         }
@@ -218,10 +212,7 @@ class WidgetUpdateWorker(
 
             val widgetManager = android.appwidget.AppWidgetManager.getInstance(context)
             val ids = appWidgetIds ?: widgetManager.getAppWidgetIds(
-                android.content.ComponentName(
-                    context,
-                    com.moex.widget.widget.MOEXWidgetProvider::class.java
-                )
+                ComponentName(context, com.moex.widget.widget.MOEXWidgetProvider::class.java)
             )
             widgetManager.updateAppWidget(ids, remoteViews)
         }

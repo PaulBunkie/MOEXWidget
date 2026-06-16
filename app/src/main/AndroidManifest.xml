@@ -26,6 +26,19 @@
                 android:resource="@xml/widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".widget.MOEXWidgetProviderSmall"
+            android:exported="true"
+            android:label="@string/widget_name_small">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.moex.widget.ACTION_MANUAL_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_small_info" />
+        </receiver>
+
         <activity
             android:name=".widget.WidgetConfigActivity"
             android:exported="true"

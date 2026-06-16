@@ -19,7 +19,8 @@ import java.util.Locale
  */
 class ChartRenderer(
     private val width: Int,
-    private val height: Int
+    private val height: Int,
+    private val showLabels: Boolean = true
 ) {
     // Colors
     private val backgroundColor = Color.WHITE
@@ -98,14 +99,14 @@ class ChartRenderer(
         // Fill color with alpha
         val fillAlpha = if (isPositive) positiveFillAlpha else negativeFillAlpha
 
-        // Draw horizontal grid lines (skip top label to avoid artifacts)
+        // Draw horizontal grid lines
         val gridLines = 4
         for (i in 0..gridLines) {
             val y = chartRect.top + (chartRect.height() * i / gridLines)
             canvas.drawLine(chartRect.left, y, chartRect.right, y, gridPaint)
 
             // Price labels (skip the first/top one to avoid artifacts)
-            if (i > 0) {
+            if (showLabels && i > 0) {
                 val price = maxPrice - (priceRange * i / gridLines)
                 textPaint.textSize = 20f
                 val priceText = decimalFormat.format(price)
@@ -113,17 +114,19 @@ class ChartRenderer(
             }
         }
 
-        // Draw vertical grid + time labels (show ~4-6 labels)
+        // Draw vertical grid + time labels
         val timeLabels = minOf(candles.size, 6)
         val step = maxOf(1, candles.size / timeLabels)
         for (i in 0 until candles.size step step) {
             val x = chartRect.left + (chartRect.width() * i / (candles.size - 1).coerceAtLeast(1))
             canvas.drawLine(x, chartRect.top, x, chartRect.bottom, gridPaint)
 
-            // Time labels at bottom
-            textPaint.textSize = 20f
-            val timeText = timeFormat.format(Date(candles[i].time))
-            canvas.drawText(timeText, x - textPaint.measureText(timeText) / 2f, chartRect.bottom + 20f, textPaint)
+            // Time labels at bottom (only for large widget)
+            if (showLabels) {
+                textPaint.textSize = 20f
+                val timeText = timeFormat.format(Date(candles[i].time))
+                canvas.drawText(timeText, x - textPaint.measureText(timeText) / 2f, chartRect.bottom + 20f, textPaint)
+            }
         }
 
         // Draw price line

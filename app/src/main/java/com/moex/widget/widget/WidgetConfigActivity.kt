@@ -135,14 +135,20 @@ class WidgetConfigActivity : AppCompatActivity() {
         val key = "instrument_$appWidgetId"
         val value = instrument.toKey()
         Log.d(TAG, "saveInstrument: key=$key, value=$value")
+
+        // Detect widget size
+        val widgetManager = AppWidgetManager.getInstance(this)
+        val widgetInfo = widgetManager.getAppWidgetInfo(appWidgetId)
+        val isSmall = widgetInfo?.provider == android.content.ComponentName(
+            this, MOEXWidgetProviderSmall::class.java
+        )
+        Log.d(TAG, "saveInstrument: isSmall=$isSmall, provider=${widgetInfo?.provider}")
+
         val result = prefs.edit()
             .putString(key, value)
+            .putBoolean("small_$appWidgetId", isSmall)
             .commit()
         Log.d(TAG, "saveInstrument commit result=$result")
-
-        // Verify read-back
-        val readBack = prefs.getString(key, "NOT_FOUND")
-        Log.d(TAG, "saveInstrument readBack=$readBack")
     }
 
     companion object {
