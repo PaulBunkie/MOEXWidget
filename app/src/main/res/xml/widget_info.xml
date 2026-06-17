@@ -6,4 +6,5 @@
     android:initialLayout="@layout/widget_layout"
     android:configure="com.moex.widget.widget.WidgetConfigActivity"
     android:resizeMode="horizontal|vertical"
+    android:previewImage="@drawable/ic_widget_preview_large"
     android:widgetCategory="home_screen" />

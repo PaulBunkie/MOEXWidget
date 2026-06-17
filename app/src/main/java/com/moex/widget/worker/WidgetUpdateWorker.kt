@@ -48,6 +48,19 @@ class WidgetUpdateWorker(
         val displayName = provider.getDisplayName()
         Log.d(TAG, "displayName=$displayName")
 
+        // Detect widget size BEFORE try so both success and error paths can use it
+        val widgetManager = android.appwidget.AppWidgetManager.getInstance(applicationContext)
+        val isSmallWidget = if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
+            val info = widgetManager.getAppWidgetInfo(appWidgetIds[0])
+            val smallProvider = ComponentName(applicationContext, com.moex.widget.widget.MOEXWidgetProviderSmall::class.java)
+            val isSmall = info?.provider == smallProvider
+            Log.d(TAG, "Widget size detect: id=${appWidgetIds[0]}, provider=${info?.provider}, expectedSmall=$smallProvider, isSmall=$isSmall")
+            isSmall
+        } else {
+            Log.d(TAG, "Widget size detect: no appWidgetIds, defaulting to LARGE")
+            false
+        }
+
         return try {
             val result = provider.fetch24hCandles()
             val candles = if (result.isSuccess) {
@@ -61,35 +74,33 @@ class WidgetUpdateWorker(
                     Log.d(TAG, "Using cached data: ${cached.size} candles")
                     cached
                 } else {
-                    Log.e(TAG, "No data available")
-                    updateWidgetWithError(displayName, applicationContext, appWidgetIds)
+                    Log.e(TAG, "No data available (isSmallWidget=$isSmallWidget)")
+                    updateWidgetWithError(displayName, applicationContext, appWidgetIds, isSmallWidget)
                     return Result.success()
                 }
             }
 
-            Log.d(TAG, "Fetched ${candles.size} candles, last price=${candles.last().close}")
-
-            // Read widget size from SharedPreferences
-            val isSmallWidget = if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
-                val prefs = applicationContext.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
-                prefs.getBoolean("small_${appWidgetIds[0]}", false)
-            } else false
+            Log.d(TAG, "Fetched ${candles.size} candles, last price=${candles.last().close} (isSmallWidget=$isSmallWidget)")
 
             // Generate DIFFERENT bitmaps for different widget sizes
             val displayMetrics = applicationContext.resources.displayMetrics
             val bitmap: Bitmap? = if (isSmallWidget) {
-                // 2x2: SQUARE bitmap
+                // 2x2: SQUARE bitmap WITH smaller labels
                 val size = (200 * displayMetrics.density).toInt()
-                Log.d(TAG, "Rendering SMALL square bitmap: ${size}x${size}")
-                val renderer = ChartRenderer(size, size, showLabels = true)
-                renderer.render(candles)
+                Log.d(TAG, "Rendering SMALL square bitmap: ${size}x${size}, labelTextSize=30f, labels at 2,4,6")
+                val renderer = ChartRenderer(size, size, showLabels = true, labelTextSize = 30f, timeLabelStep = 2, timeLabelOffset = 1)
+                val bm = renderer.render(candles)
+                Log.d(TAG, "SMALL bitmap created: ${bm?.width}x${bm?.height}")
+                bm
             } else {
-                // 3x2/4x2: WIDE bitmap
+                // 4x2: WIDE bitmap
                 val chartWidth = (250 * displayMetrics.density).toInt()
                 val chartHeight = (100 * displayMetrics.density).toInt()
-                Log.d(TAG, "Rendering LARGE wide bitmap: ${chartWidth}x${chartHeight}")
-                val renderer = ChartRenderer(chartWidth, chartHeight, showLabels = true)
-                renderer.render(candles)
+                Log.d(TAG, "Rendering LARGE wide bitmap: ${chartWidth}x${chartHeight}, labelTextSize=15f")
+                val renderer = ChartRenderer(chartWidth, chartHeight, showLabels = true, labelTextSize = 15f)
+                val bm = renderer.render(candles)
+                Log.d(TAG, "LARGE bitmap created: ${bm?.width}x${bm?.height}")
+                bm
             }
 
             val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
@@ -120,7 +131,6 @@ class WidgetUpdateWorker(
             }
 
             // Update widgets
-            val widgetManager = android.appwidget.AppWidgetManager.getInstance(applicationContext)
             val ids = appWidgetIds ?: widgetManager.getAppWidgetIds(
                 ComponentName(applicationContext, com.moex.widget.widget.MOEXWidgetProvider::class.java)
             )
@@ -129,12 +139,12 @@ class WidgetUpdateWorker(
 
             Result.success()
         } catch (e: Exception) {
-            Log.e(TAG, "Error in doWork", e)
+            Log.e(TAG, "Error in doWork (isSmallWidget=$isSmallWidget)", e)
             val cached = cacheManager.loadCandles(instrumentKey)
             if (cached != null) {
-                updateWidgetWithData(displayName, cached, applicationContext, appWidgetIds)
+                updateWidgetWithData(displayName, cached, applicationContext, appWidgetIds, isSmallWidget)
             } else {
-                updateWidgetWithError(displayName, applicationContext, appWidgetIds)
+                updateWidgetWithError(displayName, applicationContext, appWidgetIds, isSmallWidget)
             }
             Result.success()
         }
@@ -178,15 +188,29 @@ class WidgetUpdateWorker(
             displayName: String,
             candles: List<com.moex.widget.data.Candle>,
             context: Context,
-            appWidgetIds: IntArray?
+            appWidgetIds: IntArray?,
+            isSmallWidget: Boolean = false
         ) {
             val displayMetrics = context.resources.displayMetrics
-            val chartWidth = (250 * displayMetrics.density).toInt()
-            val chartHeight = (100 * displayMetrics.density).toInt()
-            val renderer = ChartRenderer(chartWidth, chartHeight, showLabels = true)
-            val bitmap = renderer.render(candles)
+            val bitmap: Bitmap?
+            Log.d(TAG, "updateWidgetWithData: isSmallWidget=$isSmallWidget, candles=${candles.size}")
+            if (isSmallWidget) {
+                val size = (200 * displayMetrics.density).toInt()
+                Log.d(TAG, "updateWidgetWithData: SMALL square bitmap: ${size}x${size}, labelTextSize=30f, labels at 2,4,6")
+                val renderer = ChartRenderer(size, size, showLabels = true, labelTextSize = 30f, timeLabelStep = 2, timeLabelOffset = 1)
+                bitmap = renderer.render(candles)
+                Log.d(TAG, "updateWidgetWithData: SMALL bitmap created: ${bitmap?.width}x${bitmap?.height}")
+            } else {
+                val chartWidth = (250 * displayMetrics.density).toInt()
+                val chartHeight = (100 * displayMetrics.density).toInt()
+                Log.d(TAG, "updateWidgetWithData: LARGE wide bitmap (4x2): ${chartWidth}x${chartHeight}, labelTextSize=15f")
+                val renderer = ChartRenderer(chartWidth, chartHeight, showLabels = true, labelTextSize = 15f)
+                bitmap = renderer.render(candles)
+                Log.d(TAG, "updateWidgetWithData: LARGE bitmap created: ${bitmap?.width}x${bitmap?.height}")
+            }
 
-            val remoteViews = RemoteViews(context.packageName, R.layout.widget_layout)
+            val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
+            val remoteViews = RemoteViews(context.packageName, layoutRes)
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
             remoteViews.setTextViewText(R.id.price_text, String.format("%.2f", candles.last().close))
 
@@ -195,25 +219,36 @@ class WidgetUpdateWorker(
             }
 
             val widgetManager = android.appwidget.AppWidgetManager.getInstance(context)
-            val ids = appWidgetIds ?: widgetManager.getAppWidgetIds(
+            val expectedProvider = if (isSmallWidget) {
+                ComponentName(context, com.moex.widget.widget.MOEXWidgetProviderSmall::class.java)
+            } else {
                 ComponentName(context, com.moex.widget.widget.MOEXWidgetProvider::class.java)
-            )
+            }
+            val ids = appWidgetIds ?: widgetManager.getAppWidgetIds(expectedProvider)
+            Log.d(TAG, "updateWidgetWithData: updating ${ids.size} widgets, provider=$expectedProvider")
             widgetManager.updateAppWidget(ids, remoteViews)
         }
 
         private fun updateWidgetWithError(
             displayName: String,
             context: Context,
-            appWidgetIds: IntArray?
+            appWidgetIds: IntArray?,
+            isSmallWidget: Boolean = false
         ) {
-            val remoteViews = RemoteViews(context.packageName, R.layout.widget_layout)
+            val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
+            Log.d(TAG, "updateWidgetWithError: isSmallWidget=$isSmallWidget, layout=$layoutRes")
+            val remoteViews = RemoteViews(context.packageName, layoutRes)
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
             remoteViews.setTextViewText(R.id.price_text, "N/A")
 
             val widgetManager = android.appwidget.AppWidgetManager.getInstance(context)
-            val ids = appWidgetIds ?: widgetManager.getAppWidgetIds(
+            val expectedProvider = if (isSmallWidget) {
+                ComponentName(context, com.moex.widget.widget.MOEXWidgetProviderSmall::class.java)
+            } else {
                 ComponentName(context, com.moex.widget.widget.MOEXWidgetProvider::class.java)
-            )
+            }
+            val ids = appWidgetIds ?: widgetManager.getAppWidgetIds(expectedProvider)
+            Log.d(TAG, "updateWidgetWithError: updating ${ids.size} widgets, provider=$expectedProvider")
             widgetManager.updateAppWidget(ids, remoteViews)
         }
     }

@@ -20,7 +20,10 @@ import java.util.Locale
 class ChartRenderer(
     private val width: Int,
     private val height: Int,
-    private val showLabels: Boolean = true
+    private val showLabels: Boolean = true,
+    private val labelTextSize: Float = 20f,
+    private val timeLabelStep: Int = 1,
+    private val timeLabelOffset: Int = 0
 ) {
     // Colors
     private val backgroundColor = Color.WHITE
@@ -108,7 +111,7 @@ class ChartRenderer(
             // Price labels (skip the first/top one to avoid artifacts)
             if (showLabels && i > 0) {
                 val price = maxPrice - (priceRange * i / gridLines)
-                textPaint.textSize = 20f
+                textPaint.textSize = labelTextSize
                 val priceText = decimalFormat.format(price)
                 canvas.drawText(priceText, chartRect.right - textPaint.measureText(priceText) - 2f, y - 2f, textPaint)
             }
@@ -118,12 +121,13 @@ class ChartRenderer(
         val timeLabels = minOf(candles.size, 6)
         val step = maxOf(1, candles.size / timeLabels)
         for (i in 0 until candles.size step step) {
+            val labelIndex = i / step
             val x = chartRect.left + (chartRect.width() * i / (candles.size - 1).coerceAtLeast(1))
             canvas.drawLine(x, chartRect.top, x, chartRect.bottom, gridPaint)
 
-            // Time labels at bottom (only for large widget)
-            if (showLabels) {
-                textPaint.textSize = 20f
+            // Time labels at bottom — skip based on step/offset
+            if (showLabels && (labelIndex - timeLabelOffset) % timeLabelStep == 0) {
+                textPaint.textSize = labelTextSize
                 val timeText = timeFormat.format(Date(candles[i].time))
                 canvas.drawText(timeText, x - textPaint.measureText(timeText) / 2f, chartRect.bottom + 20f, textPaint)
             }
