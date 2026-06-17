@@ -79,7 +79,12 @@ class ChartRenderer(
         val paddingLeft = 10f
         val paddingRight = 10f
         val paddingTop = 5f
-        val paddingBottom = 25f
+        // Original 20f baseline → paddingBottom 25f. For larger text increase both.
+        val (paddingBottom, labelBaseline) = if (labelTextSize <= 20f) {
+            25f to 20f  // Original settings for large widget (15f text)
+        } else {
+            (labelTextSize + 8f) to (labelTextSize + 3f)  // Small widget (30f text)
+        }
 
         val chartWidth = width - paddingLeft - paddingRight
         val chartHeight = height - paddingTop - paddingBottom
@@ -129,7 +134,8 @@ class ChartRenderer(
             if (showLabels && (labelIndex - timeLabelOffset) % timeLabelStep == 0) {
                 textPaint.textSize = labelTextSize
                 val timeText = timeFormat.format(Date(candles[i].time))
-                canvas.drawText(timeText, x - textPaint.measureText(timeText) / 2f, chartRect.bottom + 20f, textPaint)
+                // Use dynamic baseline based on text size
+                canvas.drawText(timeText, x - textPaint.measureText(timeText) / 2f, chartRect.bottom + labelBaseline, textPaint)
             }
         }
 

@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.Log
+import android.util.TypedValue
 import android.widget.RemoteViews
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -50,14 +51,16 @@ class WidgetUpdateWorker(
 
         // Detect widget size BEFORE try so both success and error paths can use it
         val widgetManager = android.appwidget.AppWidgetManager.getInstance(applicationContext)
-        val isSmallWidget = if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
-            val info = widgetManager.getAppWidgetInfo(appWidgetIds[0])
+        val widgetIdsToUpdate = appWidgetIds ?: widgetManager.getAppWidgetIds(
+            ComponentName(applicationContext, com.moex.widget.widget.MOEXWidgetProvider::class.java)
+        )
+        val isSmallWidget = if (widgetIdsToUpdate.isNotEmpty()) {
+            val info = widgetManager.getAppWidgetInfo(widgetIdsToUpdate[0])
             val smallProvider = ComponentName(applicationContext, com.moex.widget.widget.MOEXWidgetProviderSmall::class.java)
             val isSmall = info?.provider == smallProvider
-            Log.d(TAG, "Widget size detect: id=${appWidgetIds[0]}, provider=${info?.provider}, expectedSmall=$smallProvider, isSmall=$isSmall")
             isSmall
         } else {
-            Log.d(TAG, "Widget size detect: no appWidgetIds, defaulting to LARGE")
+            Log.d(TAG, "Detect: no widget ids, defaulting LARGE")
             false
         }
 
@@ -106,6 +109,14 @@ class WidgetUpdateWorker(
             val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
             val remoteViews = RemoteViews(applicationContext.packageName, layoutRes)
 
+            // Increase title/price font size on tablets (smallestScreenWidth >= 600dp)
+            val isTablet = applicationContext.resources.configuration.smallestScreenWidthDp >= 600
+            val titleSizeSp = if (isTablet) 22f else 14f
+            val titleSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, titleSizeSp, applicationContext.resources.displayMetrics).toInt()
+            remoteViews.setTextViewTextSize(R.id.ticker_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
+            remoteViews.setTextViewTextSize(R.id.price_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
+            Log.d(TAG, "Title font: isTablet=$isTablet, ${titleSizeSp}sp = ${titleSizePx}px")
+
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
             remoteViews.setTextViewText(R.id.price_text, String.format("%.2f", candles.last().close))
 
@@ -131,10 +142,7 @@ class WidgetUpdateWorker(
             }
 
             // Update widgets
-            val ids = appWidgetIds ?: widgetManager.getAppWidgetIds(
-                ComponentName(applicationContext, com.moex.widget.widget.MOEXWidgetProvider::class.java)
-            )
-            widgetManager.updateAppWidget(ids, remoteViews)
+            widgetManager.updateAppWidget(widgetIdsToUpdate, remoteViews)
             Log.d(TAG, "Widget updated: $displayName (small=$isSmallWidget)")
 
             Result.success()
@@ -211,6 +219,14 @@ class WidgetUpdateWorker(
 
             val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
             val remoteViews = RemoteViews(context.packageName, layoutRes)
+
+            val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
+            val titleSizeSp = if (isTablet) 22f else 14f
+            val titleSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, titleSizeSp, context.resources.displayMetrics).toInt()
+            remoteViews.setTextViewTextSize(R.id.ticker_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
+            remoteViews.setTextViewTextSize(R.id.price_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
+            Log.d(TAG, "updateWidgetWithData: title font isTablet=$isTablet, ${titleSizeSp}sp = ${titleSizePx}px")
+
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
             remoteViews.setTextViewText(R.id.price_text, String.format("%.2f", candles.last().close))
 
@@ -238,6 +254,13 @@ class WidgetUpdateWorker(
             val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
             Log.d(TAG, "updateWidgetWithError: isSmallWidget=$isSmallWidget, layout=$layoutRes")
             val remoteViews = RemoteViews(context.packageName, layoutRes)
+
+            val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
+            val titleSizeSp = if (isTablet) 22f else 14f
+            val titleSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, titleSizeSp, context.resources.displayMetrics).toInt()
+            remoteViews.setTextViewTextSize(R.id.ticker_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
+            remoteViews.setTextViewTextSize(R.id.price_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
+
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
             remoteViews.setTextViewText(R.id.price_text, "N/A")
 
