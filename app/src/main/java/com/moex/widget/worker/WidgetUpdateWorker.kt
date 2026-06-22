@@ -137,7 +137,7 @@ class WidgetUpdateWorker(
         // 6. Render bitmap for this widget's size
         val displayMetrics = context.resources.displayMetrics
         val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
-        val labelTextSize = if (isTablet) 20f else 30f
+        val labelTextSize = if (isTablet) 20f else 40f
         val commonHeight = (200 * displayMetrics.density).toInt()
         val bitmap: Bitmap? = if (isSmallWidget) {
             val size = commonHeight
