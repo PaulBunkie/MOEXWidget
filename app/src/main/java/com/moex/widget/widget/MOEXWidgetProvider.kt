@@ -42,18 +42,23 @@ class MOEXWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
         Log.d(TAG, "onReceive: action=${intent.action}")
 
         when (intent.action) {
             ACTION_MANUAL_REFRESH -> {
                 Log.d(TAG, "Manual refresh triggered by tap!")
-                val appWidgetManager = AppWidgetManager.getInstance(context)
-                val thisWidget = ComponentName(context, MOEXWidgetProvider::class.java)
-                val appWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
-
-                for (appWidgetId in appWidgetIds) {
+                // Get the specific widget ID from intent, not all widgets
+                val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+                if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
                     triggerRefresh(context, appWidgetId)
+                } else {
+                    // Fallback: refresh all widgets
+                    val appWidgetManager = AppWidgetManager.getInstance(context)
+                    val thisWidget = ComponentName(context, MOEXWidgetProvider::class.java)
+                    val appWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
+                    for (id in appWidgetIds) {
+                        triggerRefresh(context, id)
+                    }
                 }
             }
             ACTION_TOGGLE_PERIOD -> {

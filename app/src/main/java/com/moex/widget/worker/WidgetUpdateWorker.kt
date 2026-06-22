@@ -64,6 +64,11 @@ class WidgetUpdateWorker(
                 updateSingleWidget(applicationContext, appWidgetId, widgetManager, largeProvider, smallProvider, isPeriodToggle)
             } catch (e: Exception) {
                 Log.e(TAG, "Error updating widget $appWidgetId", e)
+                try {
+                    showErrorForWidget(applicationContext, appWidgetId, false)
+                } catch (e2: Exception) {
+                    Log.e(TAG, "Error showing error state for widget $appWidgetId", e2)
+                }
             }
         }
 
@@ -120,7 +125,7 @@ class WidgetUpdateWorker(
                         high = candle.high,
                         low = candle.low,
                         close = candle.close,
-                        period = period,
+                        period = "1h",
                         appWidgetId = appWidgetId
                     )
                 }
@@ -195,8 +200,7 @@ class WidgetUpdateWorker(
         isSmallWidget: Boolean,
         displayName: String = "N/A"
     ) {
-        val widgetManager = AppWidgetManager.getInstance(context)
-        updateWidgetWithError(displayName, context, intArrayOf(appWidgetId), isSmallWidget)
+        updateWidgetWithError(displayName, context, appWidgetId, isSmallWidget)
     }
 
     companion object {
@@ -375,7 +379,7 @@ class WidgetUpdateWorker(
         private fun updateWidgetWithError(
             displayName: String,
             context: Context,
-            appWidgetIds: IntArray,
+            appWidgetId: Int,
             isSmallWidget: Boolean
         ) {
             val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
@@ -389,8 +393,15 @@ class WidgetUpdateWorker(
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
             remoteViews.setTextViewText(R.id.price_text, "N/A")
 
+            // Always set up click handlers so widget remains interactive
+            if (isSmallWidget) {
+                MOEXWidgetProviderSmall.updateWidgetClickHandler(context, remoteViews, appWidgetId)
+            } else {
+                MOEXWidgetProvider.updateWidgetClickHandler(context, remoteViews, appWidgetId)
+            }
+
             val widgetManager = AppWidgetManager.getInstance(context)
-            widgetManager.updateAppWidget(appWidgetIds, remoteViews)
+            widgetManager.updateAppWidget(appWidgetId, remoteViews)
         }
     }
 }

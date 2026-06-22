@@ -34,7 +34,6 @@ class MOEXWidgetProviderSmall : AppWidgetProvider() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
         Log.d(TAG, "onReceive: action=${intent.action}")
 
         when (intent.action) {
