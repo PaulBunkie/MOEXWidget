@@ -136,19 +136,20 @@ class WidgetUpdateWorker(
 
         // 6. Render bitmap for this widget's size
         val displayMetrics = context.resources.displayMetrics
+        val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
+        val labelTextSize = if (isTablet) 20f else 30f
         val commonHeight = (200 * displayMetrics.density).toInt()
         val bitmap: Bitmap? = if (isSmallWidget) {
             val size = commonHeight
-            val renderer = ChartRenderer(size, size, true, 30f, timeLabelStep = 2, timeLabelOffset = 1)
+            val renderer = ChartRenderer(size, size, true, labelTextSize, timeLabelStep = 2, timeLabelOffset = 1)
             renderer.render(candlesForRender)
         } else {
             val w = (350 * displayMetrics.density).toInt()
-            val renderer = ChartRenderer(w, commonHeight, true, 30f)
+            val renderer = ChartRenderer(w, commonHeight, true, labelTextSize)
             renderer.render(candlesForRender)
         }
 
         // 7. Update the widget
-        val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
         updateWidget(displayName, candlesForRender, bitmap, context, appWidgetId, isSmallWidget, isTablet)
     }
 
