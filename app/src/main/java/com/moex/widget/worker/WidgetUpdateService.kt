@@ -14,7 +14,7 @@ class WidgetUpdateService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val appWidgetIds = intent?.getIntArrayExtra(MOEXWidgetProvider.EXTRA_APPWIDGET_IDS)
+        val appWidgetIds = intent?.getIntArrayExtra(MOEXWidgetProvider.EXTRA_APPWIDGET_IDS) ?: intArrayOf()
         val ticker = intent?.getStringExtra(MOEXWidgetProvider.EXTRA_TICKER) ?: "SBER"
 
         // Trigger the worker to refresh data

@@ -1,9 +1,9 @@
 package com.moex.widget.worker
 
+import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Color
 import android.util.Log
 import android.util.TypedValue
 import android.widget.RemoteViews
@@ -20,6 +20,8 @@ import com.moex.widget.data.CryptoProvider
 import com.moex.widget.data.Instrument
 import com.moex.widget.data.MoexApiClient
 import com.moex.widget.data.PriceProvider
+import com.moex.widget.widget.MOEXWidgetProvider
+import com.moex.widget.widget.MOEXWidgetProviderSmall
 import java.util.concurrent.TimeUnit
 
 class WidgetUpdateWorker(
@@ -30,8 +32,25 @@ class WidgetUpdateWorker(
     private val cacheManager = CacheManager(context)
 
     override suspend fun doWork(): Result {
-        val instrumentKey = inputData.getString(KEY_INSTRUMENT) ?: DEFAULT_INSTRUMENT_KEY
+        val widgetManager = AppWidgetManager.getInstance(applicationContext)
+        val largeProvider = ComponentName(applicationContext, MOEXWidgetProvider::class.java)
+        val smallProvider = ComponentName(applicationContext, MOEXWidgetProviderSmall::class.java)
+
         val appWidgetIds = inputData.getIntArray(KEY_APPWIDGET_IDS)
+        val idsToUpdate = if (appWidgetIds != null && appWidgetIds.isNotEmpty()) {
+            appWidgetIds.toList()
+        } else {
+            val largeIds = widgetManager.getAppWidgetIds(largeProvider)
+            val smallIds = widgetManager.getAppWidgetIds(smallProvider)
+            (largeIds + smallIds).toList()
+        }
+
+        val smallIdsOnScreen = widgetManager.getAppWidgetIds(smallProvider)
+        val isSmallWidget = idsToUpdate.isNotEmpty() && idsToUpdate.all { it in smallIdsOnScreen }
+
+        // For periodic update (no specific IDs), use the instrument from the first widget on screen
+        // so both widgets show the SAME price
+        val instrumentKey = inputData.getString(KEY_INSTRUMENT) ?: getFirstWidgetInstrument(widgetManager, largeProvider, smallProvider)
         Log.d(TAG, "doWork: instrumentKey=$instrumentKey, appWidgetIds=${appWidgetIds?.contentToString()}")
 
         val instrument = try {
@@ -49,20 +68,7 @@ class WidgetUpdateWorker(
         val displayName = provider.getDisplayName()
         Log.d(TAG, "displayName=$displayName")
 
-        // Detect widget size BEFORE try so both success and error paths can use it
-        val widgetManager = android.appwidget.AppWidgetManager.getInstance(applicationContext)
-        val widgetIdsToUpdate = appWidgetIds ?: widgetManager.getAppWidgetIds(
-            ComponentName(applicationContext, com.moex.widget.widget.MOEXWidgetProvider::class.java)
-        )
-        val isSmallWidget = if (widgetIdsToUpdate.isNotEmpty()) {
-            val info = widgetManager.getAppWidgetInfo(widgetIdsToUpdate[0])
-            val smallProvider = ComponentName(applicationContext, com.moex.widget.widget.MOEXWidgetProviderSmall::class.java)
-            val isSmall = info?.provider == smallProvider
-            isSmall
-        } else {
-            Log.d(TAG, "Detect: no widget ids, defaulting LARGE")
-            false
-        }
+        Log.d(TAG, "Updating ${idsToUpdate.size} widgets, small=$isSmallWidget")
 
         return try {
             val result = provider.fetch24hCandles()
@@ -71,91 +77,68 @@ class WidgetUpdateWorker(
                 cacheManager.saveCandles(instrumentKey, freshCandles)
                 freshCandles
             } else {
-                Log.w(TAG, "API fetch failed: ${result.exceptionOrNull()?.message}")
+                Log.w(TAG, "API fetch failed, using cache")
                 val cached = cacheManager.loadCandles(instrumentKey)
-                if (cached != null) {
-                    Log.d(TAG, "Using cached data: ${cached.size} candles")
-                    cached
-                } else {
-                    Log.e(TAG, "No data available (isSmallWidget=$isSmallWidget)")
-                    updateWidgetWithError(displayName, applicationContext, appWidgetIds, isSmallWidget)
-                    return Result.success()
-                }
+                if (cached != null) cached else emptyList()
             }
 
-            Log.d(TAG, "Fetched ${candles.size} candles, last price=${candles.last().close} (isSmallWidget=$isSmallWidget)")
+            if (candles.isEmpty()) {
+                idsToUpdate.forEach { id ->
+                    val small = id in smallIdsOnScreen
+                    updateWidgetWithError(displayName, applicationContext, intArrayOf(id), small)
+                }
+                return Result.success()
+            }
 
-            // Generate DIFFERENT bitmaps for different widget sizes
+            // Generate bitmap based on widget type
             val displayMetrics = applicationContext.resources.displayMetrics
-            val bitmap: Bitmap? = if (isSmallWidget) {
-                // 2x2: SQUARE bitmap WITH smaller labels
-                val size = (200 * displayMetrics.density).toInt()
-                Log.d(TAG, "Rendering SMALL square bitmap: ${size}x${size}, labelTextSize=30f, labels at 2,4,6")
-                val renderer = ChartRenderer(size, size, showLabels = true, labelTextSize = 30f, timeLabelStep = 2, timeLabelOffset = 1)
-                val bm = renderer.render(candles)
-                Log.d(TAG, "SMALL bitmap created: ${bm?.width}x${bm?.height}")
-                bm
-            } else {
-                // 4x2: WIDE bitmap
-                val chartWidth = (250 * displayMetrics.density).toInt()
-                val chartHeight = (100 * displayMetrics.density).toInt()
-                Log.d(TAG, "Rendering LARGE wide bitmap: ${chartWidth}x${chartHeight}, labelTextSize=15f")
-                val renderer = ChartRenderer(chartWidth, chartHeight, showLabels = true, labelTextSize = 15f)
-                val bm = renderer.render(candles)
-                Log.d(TAG, "LARGE bitmap created: ${bm?.width}x${bm?.height}")
-                bm
-            }
-
-            val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
-            val remoteViews = RemoteViews(applicationContext.packageName, layoutRes)
-
-            // Increase title/price font size on tablets (smallestScreenWidth >= 600dp)
             val isTablet = applicationContext.resources.configuration.smallestScreenWidthDp >= 600
-            val titleSizeSp = if (isTablet) 22f else 14f
-            val titleSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, titleSizeSp, applicationContext.resources.displayMetrics).toInt()
-            remoteViews.setTextViewTextSize(R.id.ticker_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
-            remoteViews.setTextViewTextSize(R.id.price_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
-            Log.d(TAG, "Title font: isTablet=$isTablet, ${titleSizeSp}sp = ${titleSizePx}px")
-
-            remoteViews.setTextViewText(R.id.ticker_text, displayName)
-            remoteViews.setTextViewText(R.id.price_text, String.format("%.2f", candles.last().close))
-
-            if (bitmap != null) {
-                remoteViews.setImageViewBitmap(R.id.chart_image, bitmap)
+            val commonHeight = (200 * displayMetrics.density).toInt()
+            val bitmap: Bitmap? = if (isSmallWidget) {
+                val size = commonHeight
+                val renderer = ChartRenderer(size, size, true, 30f, timeLabelStep = 2, timeLabelOffset = 1)
+                renderer.render(candles)
+            } else {
+                val w = (350 * displayMetrics.density).toInt()
+                val renderer = ChartRenderer(w, commonHeight, true, 30f)
+                renderer.render(candles)
             }
 
-            // Set up tap-to-refresh
-            if (appWidgetIds != null) {
-                for (id in appWidgetIds) {
-                    val providerClass = if (isSmallWidget) {
-                        com.moex.widget.widget.MOEXWidgetProviderSmall::class.java
-                    } else {
-                        com.moex.widget.widget.MOEXWidgetProvider::class.java
-                    }
-                    providerClass.getMethod(
-                        "updateWidgetClickHandler",
-                        Context::class.java,
-                        RemoteViews::class.java,
-                        Int::class.javaPrimitiveType
-                    ).invoke(null, applicationContext, remoteViews, id)
-                }
+            // Update EACH widget with its correct layout
+            idsToUpdate.forEach { id ->
+                val small = id in smallIdsOnScreen
+                updateWidget(displayName, candles, bitmap, applicationContext, intArrayOf(id), small, isTablet)
             }
-
-            // Update widgets
-            widgetManager.updateAppWidget(widgetIdsToUpdate, remoteViews)
-            Log.d(TAG, "Widget updated: $displayName (small=$isSmallWidget)")
 
             Result.success()
         } catch (e: Exception) {
-            Log.e(TAG, "Error in doWork (isSmallWidget=$isSmallWidget)", e)
-            val cached = cacheManager.loadCandles(instrumentKey)
-            if (cached != null) {
-                updateWidgetWithData(displayName, cached, applicationContext, appWidgetIds, isSmallWidget)
-            } else {
-                updateWidgetWithError(displayName, applicationContext, appWidgetIds, isSmallWidget)
+            Log.e(TAG, "Error in doWork", e)
+            idsToUpdate.forEach { id ->
+                val small = id in smallIdsOnScreen
+                updateWidgetWithError(displayName, applicationContext, intArrayOf(id), small)
             }
             Result.success()
         }
+    }
+
+    private fun getFirstWidgetInstrument(
+        widgetManager: AppWidgetManager,
+        largeProvider: ComponentName,
+        smallProvider: ComponentName
+    ): String {
+        val largeIds = widgetManager.getAppWidgetIds(largeProvider)
+        val smallIds = widgetManager.getAppWidgetIds(smallProvider)
+
+        val firstId = if (largeIds.isNotEmpty()) {
+            largeIds[0]
+        } else if (smallIds.isNotEmpty()) {
+            smallIds[0]
+        } else {
+            return DEFAULT_INSTRUMENT_KEY
+        }
+
+        val prefs = applicationContext.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
+        return prefs.getString("instrument_$firstId", DEFAULT_INSTRUMENT_KEY) ?: DEFAULT_INSTRUMENT_KEY
     }
 
     companion object {
@@ -165,13 +148,21 @@ class WidgetUpdateWorker(
         private const val DEFAULT_TICKER = "SBER"
         private const val DEFAULT_INSTRUMENT_KEY = "STOCK:SBER"
 
-        fun schedulePeriodic(context: Context) {
-            val workRequest = PeriodicWorkRequestBuilder<WidgetUpdateWorker>(
-                60, TimeUnit.MINUTES
-            )
-                .setInitialDelay(1, TimeUnit.MINUTES)
+        fun enqueueRefresh(context: Context, instrumentKey: String, appWidgetIds: IntArray) {
+            val inputData = androidx.work.Data.Builder()
+                .putString(KEY_INSTRUMENT, instrumentKey)
+                .putIntArray(KEY_APPWIDGET_IDS, appWidgetIds)
                 .build()
+            val workRequest = OneTimeWorkRequestBuilder<WidgetUpdateWorker>()
+                .setInputData(inputData)
+                .build()
+            WorkManager.getInstance(context).enqueue(workRequest)
+        }
 
+        fun schedulePeriodic(context: Context) {
+            val workRequest = PeriodicWorkRequestBuilder<WidgetUpdateWorker>(15, TimeUnit.MINUTES)
+                .setInitialDelay(5, TimeUnit.MINUTES)
+                .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 "moex_widget_update",
                 ExistingPeriodicWorkPolicy.KEEP,
@@ -179,100 +170,68 @@ class WidgetUpdateWorker(
             )
         }
 
-        fun enqueueRefresh(context: Context, instrumentKey: String, appWidgetIds: IntArray?) {
-            val inputData = androidx.work.Data.Builder()
-                .putString(KEY_INSTRUMENT, instrumentKey)
-                .putIntArray(KEY_APPWIDGET_IDS, appWidgetIds ?: intArrayOf())
-                .build()
-
-            val workRequest = OneTimeWorkRequestBuilder<WidgetUpdateWorker>()
-                .setInputData(inputData)
-                .build()
-
-            WorkManager.getInstance(context).enqueue(workRequest)
-        }
-
-        private fun updateWidgetWithData(
+        private fun updateWidget(
             displayName: String,
             candles: List<com.moex.widget.data.Candle>,
+            bitmap: Bitmap?,
             context: Context,
-            appWidgetIds: IntArray?,
-            isSmallWidget: Boolean = false
+            appWidgetIds: IntArray,
+            isSmallWidget: Boolean,
+            isTablet: Boolean
         ) {
-            val displayMetrics = context.resources.displayMetrics
-            val bitmap: Bitmap?
-            Log.d(TAG, "updateWidgetWithData: isSmallWidget=$isSmallWidget, candles=${candles.size}")
-            if (isSmallWidget) {
-                val size = (200 * displayMetrics.density).toInt()
-                Log.d(TAG, "updateWidgetWithData: SMALL square bitmap: ${size}x${size}, labelTextSize=30f, labels at 2,4,6")
-                val renderer = ChartRenderer(size, size, showLabels = true, labelTextSize = 30f, timeLabelStep = 2, timeLabelOffset = 1)
-                bitmap = renderer.render(candles)
-                Log.d(TAG, "updateWidgetWithData: SMALL bitmap created: ${bitmap?.width}x${bitmap?.height}")
-            } else {
-                val chartWidth = (250 * displayMetrics.density).toInt()
-                val chartHeight = (100 * displayMetrics.density).toInt()
-                Log.d(TAG, "updateWidgetWithData: LARGE wide bitmap (4x2): ${chartWidth}x${chartHeight}, labelTextSize=15f")
-                val renderer = ChartRenderer(chartWidth, chartHeight, showLabels = true, labelTextSize = 15f)
-                bitmap = renderer.render(candles)
-                Log.d(TAG, "updateWidgetWithData: LARGE bitmap created: ${bitmap?.width}x${bitmap?.height}")
-            }
-
             val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
             val remoteViews = RemoteViews(context.packageName, layoutRes)
 
-            val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
-            val titleSizeSp = if (isTablet) 22f else 14f
+            val titleSizeSp = if (isTablet) 14.67f else 14f
             val titleSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, titleSizeSp, context.resources.displayMetrics).toInt()
             remoteViews.setTextViewTextSize(R.id.ticker_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
             remoteViews.setTextViewTextSize(R.id.price_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
-            Log.d(TAG, "updateWidgetWithData: title font isTablet=$isTablet, ${titleSizeSp}sp = ${titleSizePx}px")
 
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
-            remoteViews.setTextViewText(R.id.price_text, String.format("%.2f", candles.last().close))
+            val price = candles.lastOrNull()?.close ?: 0.0
+            remoteViews.setTextViewText(R.id.price_text, String.format("%.2f", price))
 
-            if (bitmap != null) {
-                remoteViews.setImageViewBitmap(R.id.chart_image, bitmap)
-            }
+            bitmap?.let { remoteViews.setImageViewBitmap(R.id.chart_image, it) }
 
-            val widgetManager = android.appwidget.AppWidgetManager.getInstance(context)
+            val widgetManager = AppWidgetManager.getInstance(context)
             val expectedProvider = if (isSmallWidget) {
-                ComponentName(context, com.moex.widget.widget.MOEXWidgetProviderSmall::class.java)
+                ComponentName(context, MOEXWidgetProviderSmall::class.java)
             } else {
-                ComponentName(context, com.moex.widget.widget.MOEXWidgetProvider::class.java)
+                ComponentName(context, MOEXWidgetProvider::class.java)
             }
-            val ids = appWidgetIds ?: widgetManager.getAppWidgetIds(expectedProvider)
-            Log.d(TAG, "updateWidgetWithData: updating ${ids.size} widgets, provider=$expectedProvider")
-            widgetManager.updateAppWidget(ids, remoteViews)
+            val ids = appWidgetIds.filter { widgetManager.getAppWidgetInfo(it)?.provider == expectedProvider }.toIntArray()
+            if (ids.isNotEmpty()) {
+                widgetManager.updateAppWidget(ids, remoteViews)
+            }
         }
 
         private fun updateWidgetWithError(
             displayName: String,
             context: Context,
-            appWidgetIds: IntArray?,
-            isSmallWidget: Boolean = false
+            appWidgetIds: IntArray,
+            isSmallWidget: Boolean
         ) {
             val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
-            Log.d(TAG, "updateWidgetWithError: isSmallWidget=$isSmallWidget, layout=$layoutRes")
             val remoteViews = RemoteViews(context.packageName, layoutRes)
 
             val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
-            val titleSizeSp = if (isTablet) 22f else 14f
+            val titleSizeSp = if (isTablet) 14.67f else 14f
             val titleSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, titleSizeSp, context.resources.displayMetrics).toInt()
             remoteViews.setTextViewTextSize(R.id.ticker_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
             remoteViews.setTextViewTextSize(R.id.price_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
-
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
             remoteViews.setTextViewText(R.id.price_text, "N/A")
 
-            val widgetManager = android.appwidget.AppWidgetManager.getInstance(context)
+            val widgetManager = AppWidgetManager.getInstance(context)
             val expectedProvider = if (isSmallWidget) {
-                ComponentName(context, com.moex.widget.widget.MOEXWidgetProviderSmall::class.java)
+                ComponentName(context, MOEXWidgetProviderSmall::class.java)
             } else {
-                ComponentName(context, com.moex.widget.widget.MOEXWidgetProvider::class.java)
+                ComponentName(context, MOEXWidgetProvider::class.java)
             }
-            val ids = appWidgetIds ?: widgetManager.getAppWidgetIds(expectedProvider)
-            Log.d(TAG, "updateWidgetWithError: updating ${ids.size} widgets, provider=$expectedProvider")
-            widgetManager.updateAppWidget(ids, remoteViews)
+            val ids = appWidgetIds.filter { widgetManager.getAppWidgetInfo(it)?.provider == expectedProvider }.toIntArray()
+            if (ids.isNotEmpty()) {
+                widgetManager.updateAppWidget(ids, remoteViews)
+            }
         }
     }
 }
