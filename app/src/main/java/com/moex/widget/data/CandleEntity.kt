@@ -9,8 +9,8 @@ import androidx.room.Index
  */
 @Entity(
     tableName = "candles",
-    primaryKeys = ["instrumentKey", "time", "period"],
-    indices = [Index("instrumentKey")]
+    primaryKeys = ["instrumentKey", "time", "period", "appWidgetId"],
+    indices = [Index("instrumentKey"), Index("instrumentKey", "appWidgetId")]
 )
 data class CandleEntity(
     val instrumentKey: String,
@@ -19,5 +19,6 @@ data class CandleEntity(
     val high: Double,
     val low: Double,
     val close: Double,
-    val period: String = "1h"   // задел на переключение день/неделя
+    val period: String = "1h",   // задел на переключение день/неделя
+    val appWidgetId: Int = 0
 )

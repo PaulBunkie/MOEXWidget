@@ -9,7 +9,7 @@ import androidx.room.RoomDatabase
  * Room database for persistent candle history.
  * Each instrument's candles are stored by instrumentKey + period.
  */
-@Database(entities = [CandleEntity::class], version = 1, exportSchema = false)
+@Database(entities = [CandleEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun candleDao(): CandleDao
@@ -24,7 +24,8 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "moex_widget_db"
-                ).build().also { INSTANCE = it }
+                ).fallbackToDestructiveMigration()
+                .build().also { INSTANCE = it }
             }
         }
     }

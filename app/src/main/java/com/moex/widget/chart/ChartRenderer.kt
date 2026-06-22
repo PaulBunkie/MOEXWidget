@@ -23,7 +23,8 @@ class ChartRenderer(
     private val showLabels: Boolean = true,
     private val labelTextSize: Float = 20f,
     private val timeLabelStep: Int = 1,
-    private val timeLabelOffset: Int = 0
+    private val timeLabelOffset: Int = 0,
+    private val timeLabelFormat: String = "HH:mm"
 ) {
     // Colors
     private val backgroundColor = Color.WHITE
@@ -61,7 +62,7 @@ class ChartRenderer(
     }
 
     private val decimalFormat = DecimalFormat("#,##0.00")
-    private val timeFormat = SimpleDateFormat("HH:mm", Locale.US)
+    private val timeFormat = SimpleDateFormat(timeLabelFormat, Locale.US)
 
     /**
      * Renders the chart bitmap from candle data.

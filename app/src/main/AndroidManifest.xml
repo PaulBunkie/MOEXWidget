@@ -20,6 +20,7 @@
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.moex.widget.ACTION_MANUAL_REFRESH" />
+                <action android:name="com.moex.widget.ACTION_TOGGLE_PERIOD" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -33,6 +34,7 @@
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.moex.widget.ACTION_MANUAL_REFRESH" />
+                <action android:name="com.moex.widget.ACTION_TOGGLE_PERIOD" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

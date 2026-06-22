@@ -15,8 +15,14 @@ interface CandleDao {
     /**
      * Returns all candles for a given instrument and period, ordered by time ascending.
      */
-    @Query("SELECT * FROM candles WHERE instrumentKey = :instrumentKey AND period = :period ORDER BY time ASC")
-    suspend fun getCandles(instrumentKey: String, period: String = "1h"): List<CandleEntity>
+    @Query("SELECT * FROM candles WHERE instrumentKey = :instrumentKey AND appWidgetId = :appWidgetId AND period = :period ORDER BY time ASC")
+    suspend fun getCandles(instrumentKey: String, appWidgetId: Int, period: String = "1h"): List<CandleEntity>
+
+    @Query("SELECT * FROM candles WHERE instrumentKey = :instrumentKey AND appWidgetId = :appWidgetId ORDER BY time ASC")
+    suspend fun getAllCandles(instrumentKey: String, appWidgetId: Int): List<CandleEntity>
+
+    @Query("DELETE FROM candles WHERE instrumentKey = :instrumentKey AND appWidgetId = :appWidgetId")
+    suspend fun deleteCandlesForWidget(instrumentKey: String, appWidgetId: Int)
 
     /**
      * Inserts a batch of candles. Existing rows with same primary key are replaced.

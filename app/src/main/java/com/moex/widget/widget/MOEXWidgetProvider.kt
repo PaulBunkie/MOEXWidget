@@ -45,15 +45,23 @@ class MOEXWidgetProvider : AppWidgetProvider() {
         super.onReceive(context, intent)
         Log.d(TAG, "onReceive: action=${intent.action}")
 
-        if (ACTION_MANUAL_REFRESH == intent.action) {
-            Log.d(TAG, "Manual refresh triggered by tap!")
-            // Manual refresh triggered by tapping the widget
-            val appWidgetManager = AppWidgetManager.getInstance(context)
-            val thisWidget = ComponentName(context, MOEXWidgetProvider::class.java)
-            val appWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
+        when (intent.action) {
+            ACTION_MANUAL_REFRESH -> {
+                Log.d(TAG, "Manual refresh triggered by tap!")
+                val appWidgetManager = AppWidgetManager.getInstance(context)
+                val thisWidget = ComponentName(context, MOEXWidgetProvider::class.java)
+                val appWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
 
-            for (appWidgetId in appWidgetIds) {
-                triggerRefresh(context, appWidgetId)
+                for (appWidgetId in appWidgetIds) {
+                    triggerRefresh(context, appWidgetId)
+                }
+            }
+            ACTION_TOGGLE_PERIOD -> {
+                Log.d(TAG, "Period toggle triggered by tap on chart!")
+                val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+                if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                    WidgetUpdateWorker.enqueuePeriodToggle(context, intArrayOf(appWidgetId))
+                }
             }
         }
     }
@@ -72,6 +80,7 @@ class MOEXWidgetProvider : AppWidgetProvider() {
 
     companion object {
         const val ACTION_MANUAL_REFRESH = "com.moex.widget.ACTION_MANUAL_REFRESH"
+        const val ACTION_TOGGLE_PERIOD = "com.moex.widget.ACTION_TOGGLE_PERIOD"
         const val EXTRA_TICKER = "ticker"
         const val EXTRA_APPWIDGET_IDS = "appWidgetIds"
 
@@ -97,21 +106,33 @@ class MOEXWidgetProvider : AppWidgetProvider() {
             remoteViews: RemoteViews,
             appWidgetId: Int
         ) {
-            val intent = Intent(context, MOEXWidgetProvider::class.java).apply {
+            val refreshIntent = Intent(context, MOEXWidgetProvider::class.java).apply {
                 action = ACTION_MANUAL_REFRESH
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
             }
 
-            val pendingIntent = PendingIntent.getBroadcast(
+            val refreshPendingIntent = PendingIntent.getBroadcast(
                 context,
-                appWidgetId,
-                intent,
+                appWidgetId * 2,
+                refreshIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            remoteViews.setOnClickPendingIntent(R.id.chart_image, pendingIntent)
-            remoteViews.setOnClickPendingIntent(R.id.ticker_text, pendingIntent)
-            remoteViews.setOnClickPendingIntent(R.id.price_text, pendingIntent)
+            val togglePeriodIntent = Intent(context, MOEXWidgetProvider::class.java).apply {
+                action = ACTION_TOGGLE_PERIOD
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            }
+
+            val togglePeriodPendingIntent = PendingIntent.getBroadcast(
+                context,
+                appWidgetId * 2 + 1,
+                togglePeriodIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            remoteViews.setOnClickPendingIntent(R.id.chart_image, togglePeriodPendingIntent)
+            remoteViews.setOnClickPendingIntent(R.id.ticker_text, refreshPendingIntent)
+            remoteViews.setOnClickPendingIntent(R.id.price_text, refreshPendingIntent)
         }
     }
 }
