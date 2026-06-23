@@ -50,16 +50,16 @@ class WidgetConfigActivity : AppCompatActivity() {
         val confirmButton = findViewById<Button>(R.id.confirmButton)
         val titleText = findViewById<TextView>(R.id.titleText)
 
-        titleText.text = "Настройка виджета"
+        titleText.text = getString(R.string.widget_config_title)
 
         // Market selection
         marketRadioGroup.setOnCheckedChangeListener { _, checkedId ->
             instrumentContainer.removeAllViews()
 
             when (checkedId) {
+                R.id.radioYahoo -> showYahooList(instrumentContainer)
                 R.id.radioMoex -> showStockList(instrumentContainer)
                 R.id.radioCrypto -> showCryptoList(instrumentContainer)
-                R.id.radioYahoo -> showYahooList(instrumentContainer)
             }
         }
 

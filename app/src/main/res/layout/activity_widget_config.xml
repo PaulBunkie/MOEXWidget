@@ -14,7 +14,7 @@
             android:id="@+id/titleText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Настройка виджета"
+            android:text="@string/widget_config_title"
             android:textSize="20sp"
             android:textStyle="bold"
             android:textColor="#1A1A1A"
@@ -23,7 +23,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Выберите рынок:"
+            android:text="@string/select_market"
             android:textSize="16sp"
             android:textColor="#333333"
             android:layout_marginBottom="8dp" />
@@ -36,10 +36,18 @@
             android:layout_marginBottom="16dp">
 
             <RadioButton
+                android:id="@+id/radioYahoo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/radio_yahoo"
+                android:textSize="16sp"
+                android:padding="8dp" />
+
+            <RadioButton
                 android:id="@+id/radioMoex"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="MOEX (Акции)"
+                android:text="@string/radio_moex"
                 android:textSize="16sp"
                 android:padding="8dp" />
 
@@ -47,15 +55,7 @@
                 android:id="@+id/radioCrypto"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Crypto (Криптовалюты)"
-                android:textSize="16sp"
-                android:padding="8dp" />
-
-            <RadioButton
-                android:id="@+id/radioYahoo"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Yahoo (US Акции)"
+                android:text="@string/radio_crypto"
                 android:textSize="16sp"
                 android:padding="8dp" />
 
@@ -64,7 +64,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Выберите инструмент:"
+            android:text="@string/select_instrument"
             android:textSize="16sp"
             android:textColor="#333333"
             android:layout_marginBottom="8dp" />
@@ -80,7 +80,7 @@
             android:id="@+id/confirmButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Добавить виджет"
+            android:text="@string/add_widget"
             android:textSize="16sp"
             android:backgroundTint="#1A73E8"
             android:textColor="#FFFFFF"
