@@ -109,6 +109,8 @@ class WidgetConfigActivity : AppCompatActivity() {
 
             container.addView(radioButton)
         }
+
+        addSearchPlaceholder(container)
     }
 
     private fun showCryptoList(container: LinearLayout) {
@@ -129,6 +131,8 @@ class WidgetConfigActivity : AppCompatActivity() {
 
             container.addView(radioButton)
         }
+
+        addSearchPlaceholder(container)
     }
 
     private fun showYahooList(container: LinearLayout) {
@@ -148,6 +152,24 @@ class WidgetConfigActivity : AppCompatActivity() {
 
             container.addView(radioButton)
         }
+
+        addSearchPlaceholder(container)
+    }
+
+    /**
+     * Adds a disabled placeholder for the upcoming "Search instrument" feature.
+     * This is a visual hint for future premium functionality.
+     */
+    private fun addSearchPlaceholder(container: LinearLayout) {
+        val searchButton = RadioButton(this).apply {
+            text = getString(R.string.search_instrument)
+            id = android.view.View.generateViewId()
+            setPadding(16, 8, 16, 8)
+            textSize = 16f
+            isEnabled = false
+            alpha = 0.4f
+        }
+        container.addView(searchButton)
     }
 
     private fun saveInstrument(instrument: Instrument) {

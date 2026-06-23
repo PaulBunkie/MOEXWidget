@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">MOEX Widget</string>
-    <string name="widget_name">MOEX Stock Chart</string>
-    <string name="widget_name_small">MOEX Stock Chart (Small)</string>
+    <string name="app_name">Stock &amp; Crypto Chart Widget</string>
+    <string name="widget_name">Stock &amp; Crypto Chart</string>
+    <string name="widget_name_small">Stock &amp; Crypto Chart (Small)</string>
     <string name="chart_description">График цены акции</string>
     <string name="loading">Загрузка...</string>
     <string name="no_data">Нет данных</string>
@@ -15,5 +15,6 @@
     <string name="radio_moex">RU Акции</string>
     <string name="radio_crypto">Crypto</string>
     <string name="select_instrument">Выберите инструмент:</string>
+    <string name="search_instrument">Поиск инструмента...</string>
     <string name="add_widget">Добавить виджет</string>
 </resources>

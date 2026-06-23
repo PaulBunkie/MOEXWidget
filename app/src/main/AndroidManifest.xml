@@ -44,7 +44,7 @@
         <activity
             android:name=".widget.WidgetConfigActivity"
             android:exported="true"
-            android:label="Настройка виджета"
+            android:label="@string/widget_config_title"
             android:theme="@style/Theme.MOEXWidget">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
