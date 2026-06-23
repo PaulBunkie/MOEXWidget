@@ -1,42 +1,54 @@
-# MOEX Widget - Android виджет котировок MOEX и Crypto
+# MOEX Widget - Android виджет котировок
 
-Android-приложение с домашним виджетом, который отображает график цены выбранного инструмента (акции MOEX или криптовалюты) за последние 24 часа и обновляется автоматически раз в час.
+Домашний виджет для Android, отображающий график цены финансового инструмента. Три периода (1h / 1w / 1d), три рынка (MOEX / Crypto / US Stocks). Автоматическое обновление раз в час, ручное обновление по тапу.
 
 ## Функциональность
 
-- **Два размера виджета** - большой (4x2) и компактный (2x2) на выбор
-- **Виджет на рабочем столе** - отображает график цены инструмента за 24 часа
-- **Поддержка двух рынков**:
-  - **MOEX (акции)** - Moscow Exchange ISS API
-  - **Crypto (криптовалюты)** - Binance API
-- **Выбор инструмента** - экран настройки при добавлении виджета
-- **Автоматическое обновление** - раз в час через WorkManager
-- **Ручное обновление** - тап на виджет для немедленного обновления
-- **Кэширование** - Room база данных для хранения свечей
-- **Fallback** - при отсутствии интернета использует кэш
-- **Цветовая индикация тренда** - зеленый для растущих, розовый для падающих инструментов
-- **Локализация** - интерфейс на русском и английском языках
+### Виджет
+- **Тикер** — крупное жирное название инструмента
+- **Текущая цена** — рядом с тикером, крупный шрифт
+- **Три периода графика** — переключение тапом на график:
+  - **1h** — последние 24 часа (часовые свечи, подписи HH:mm)
+  - **1w** — последние 10 дней (дневные свечи, подписи dd.MM)
+  - **1d** — последние 30 дней (дневные свечи, подписи dd.MM)
+- **График цены** — линейный график закрытия свечей с:
+  - горизонтальными и вертикальными grid-линиями
+  - подписями цен справа и времени снизу
+  - цветовой индикацией тренда: 🟢 зелёный растёт, 🔴 розовый падает
+  - заливкой под линией графика
+  - точками на данных (при ≤48 свечах)
+- **Два размера** — большой (4×2, с подписями) и компактный (2×2, без подписей)
+
+### Данные
+- **Три рынка** на выбор:
+  - **MOEX** — акции Московской биржи (SBER, GAZP, LKOH, ...)
+  - **Crypto** — криптовалюты с Binance (BTCUSDT, ETHUSDT, ...)
+  - **US Stocks** — американские акции через Yahoo Finance (AAPL, NVDA, TSLA, ...)
+- **Автоматическое обновление** — раз в час через WorkManager
+- **Ручное обновление** — тап на виджет (тикер, цена или график)
+- **Кэширование** — Room база данных; при отсутствии интернета показывается последний кэш
+- **Цвет тренда** — зелёный (рост) / розовый (падение) для линии, заливки и точек
 
 ## Поддерживаемые инструменты
 
 ### MOEX (Акции)
-SBER, GAZP, LKOH, YNDX, GMKN, ROSN, SNGS, TCSG, VTBR, ALRS, AFLT, MGNT, PHOR, PLZL, TATN, HYDR, IRAO, MOEX, MTSS, RUAL
+AFLT, ALRS, GAZP, GMKN, HYDR, IRAO, LKOH, MGNT, MOEX, MTSS, PHOR, PLZL, ROSN, RUAL, SBER, SNGS, TATN, TCSG, VTBR, YNDX
 
 ### Crypto (Криптовалюты)
-BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, DOGEUSDT, ADAUSDT, DOTUSDT, MATICUSDT, SHIBUSDT, AVAXUSDT, LINKUSDT, UNIUSDT, ATOMUSDT, LTCUSDT
+ADAUSDT, ATOMUSDT, AVAXUSDT, BNBUSDT, BTCUSDT, DOGEUSDT, DOTUSDT, ETHUSDT, LINKUSDT, LTCUSDT, MATICUSDT, SHIBUSDT, SOLUSDT, UNIUSDT, XRPUSDT
+
+### US Stocks (Yahoo Finance)
+AAPL, AMD, AMZN, BA, CRM, DIS, GOOGL, INTC, JNJ, JPM, KO, MA, META, MSFT, NFLX, NVDA, PYPL, TSLA, V, WMT
 
 ## Как работает обновление данных
 
 ### Автоматическое обновление (раз в час)
-- Используется **WorkManager** с периодическим запуском каждые 60 минут
-- Система Android гарантирует выполнение примерно раз в час (допускается системная задержка)
+- **WorkManager** с периодическим запуском каждые 60 минут
 - Дополнительно настроен `android:updatePeriodMillis="3600000"` в `widget_info.xml`
-- **Разрешения не требуются** - WorkManager работает в рамках стандартных возможностей Android
-- При обновлении данные кэшируются в Room - при отсутствии интернета показывается последний кэш
+- **Разрешения не требуются** — WorkManager работает в рамках стандартных возможностей Android
+- При обновлении данные кэшируются в Room — при отсутствии интернета показывается последний кэш
 
 ### Обновление по тапу
-- При нажатии на виджет (тикер, цену или график) запускается немедленное обновление
-- Работает через PendingIntents на всех элементах виджета
 - Триггерит `ACTION_MANUAL_REFRESH` в `MOEXWidgetProvider`
 - Запускает `WidgetUpdateWorker` для загрузки свежих данных
 
@@ -46,7 +58,7 @@ AppWidgetProvider.onUpdate() / Tap → Manual Refresh
         ↓
 WorkManager (60 min periodic / one-time)
         ↓
-PriceProvider (MOEX ISS API / Binance API)
+PriceProvider (MOEX ISS API / Binance API / Yahoo Finance)
         ↓
 Candle data → Room DB (CandleDao)
         ↓
@@ -57,14 +69,14 @@ RemoteViews update
 
 ## Технологии
 
-- **Kotlin** - основной язык программирования
-- **Android AppWidget API** - для создания виджета
-- **WorkManager** - для фоновой синхронизации (периодической и одноразовой)
-- **Room** - база данных для кэширования свечей
-- **OkHttp** - HTTP клиент для запросов к API
-- **Gson** - парсинг JSON-ответов от API
-- **Canvas** - рисование графика как Bitmap
-- **Локализация** - русский и английский языки (`values-ru/strings.xml`)
+- **Kotlin** — основной язык программирования
+- **Android AppWidget API** — создание виджетов
+- **WorkManager** — фоновая синхронизация (периодическая и одноразовая)
+- **Room** — база данных для кэширования свечей
+- **OkHttp** — HTTP клиент для запросов к API
+- **Gson** — парсинг JSON-ответов
+- **Canvas** — рисование графика как Bitmap
+- **Локализация** — русский и английский языки (`values-ru/strings.xml`)
 
 ## Структура проекта
 
@@ -76,16 +88,16 @@ app/src/main/java/com/moex/widget/
 │   ├── Candle.kt                # Модель данных свечи
 │   ├── CandleDao.kt             # DAO для доступа к свечам
 │   ├── CandleEntity.kt          # Room entity для свечей
-│   ├── Instrument.kt            # Модель инструмента (Stock/Crypto)
+│   ├── Instrument.kt            # Модель инструмента (Stock/Crypto/YahooStock)
 │   ├── PriceProvider.kt         # Интерфейс провайдера данных
 │   ├── MoexApiClient.kt         # Клиент MOEX ISS API
 │   ├── CryptoProvider.kt        # Клиент Binance API
 │   └── YahooProvider.kt         # Клиент Yahoo Finance API
 ├── chart/
-│   └── ChartRenderer.kt         # Рендерер графика (цвет тренда)
+│   └── ChartRenderer.kt         # Рендерер графика (цвет тренда, заливка, подписи)
 ├── widget/
-│   ├── MOEXWidgetProvider.kt    # AppWidgetProvider (большой виджет)
-│   ├── MOEXWidgetProviderSmall.kt # AppWidgetProvider (маленький виджет)
+│   ├── MOEXWidgetProvider.kt    # AppWidgetProvider (большой виджет 4×2)
+│   ├── MOEXWidgetProviderSmall.kt # AppWidgetProvider (маленький виджет 2×2)
 │   └── WidgetConfigActivity.kt  # Экран настройки виджета
 └── worker/
     ├── WidgetUpdateWorker.kt    # WorkManager worker
@@ -96,18 +108,21 @@ app/src/main/java/com/moex/widget/
 ```
 app/src/main/res/
 ├── layout/
-│   ├── widget_layout.xml            # Макет большого виджета (4x2)
-│   ├── widget_layout_small.xml      # Макет маленького виджета (2x2)
-│   └── activity_widget_config.xml   # Экран настройки
+│   ├── widget_layout.xml            # Макет большого виджета (4×2, с подписями)
+│   ├── widget_layout_small.xml      # Макет маленького виджета (2×2, без подписей)
+│   └── activity_widget_config.xml   # Экран настройки виджета
 ├── drawable/
 │   ├── ic_widget_preview_large.png  # Превью большого виджета
 │   └── ic_widget_preview_small.png  # Превью маленького виджета
 ├── xml/
 │   ├── widget_info.xml              # Конфиг большого виджета
 │   └── widget_small_info.xml        # Конфиг маленького виджета
-└── values/
-    ├── strings.xml                  # Строки (EN)
-    └── colors.xml                   # Цвета
+├── values/
+│   ├── strings.xml                  # Строки (EN)
+│   ├── colors.xml                   # Цвета
+│   └── themes.xml                   # Темы
+└── values-ru/
+    └── strings.xml                  # Строки (RU)
 ```
 
 ## Сборка
@@ -129,14 +144,14 @@ app/src/main/res/
 ## Использование
 
 1. Откройте список виджетов на рабочем столе
-2. Найдите "MOEX Stock Chart" - доступны два размера:
-   - **MOEX Stock Chart** - большой виджет (4x2) с графиком и label'ами
-   - **MOEX Stock Chart (Small)** - компактный виджет (2x2) с мини-графиком
-3. Выберите нужный размер и перетащите на рабочий стол
+2. Найдите "Stock & Crypto Chart" — доступны два размера:
+   - **Stock & Crypto Chart** — большой виджет (4×2) с графиком и подписями цен/времени
+   - **Stock & Crypto Chart (Small)** — компактный виджет (2×2) с мини-графиком без подписей
+3. Перетащите нужный размер на рабочий стол
 4. Откроется экран настройки:
-   - Выберите рынок (MOEX или Crypto)
+   - Выберите рынок (MOEX / Crypto / US Stocks)
    - Выберите инструмент из списка
-   - Нажмите "Добавить виджет"
+   - Нажмите «Добавить виджет»
 5. Виджет автоматически загрузит данные за последние 24 часа
 6. Для ручного обновления нажмите на виджет
 7. Виджет обновляется автоматически раз в час
@@ -153,9 +168,12 @@ app/src/main/res/
 - Интервал: 1 час
 - Период: последние 24 часа (24 свечи)
 
+### Yahoo Finance API
+- Интервал: 1 час
+- Период: последние 24 часа
+
 ## Планы на развитие
 
-- Переключение интервалов (1h / 5m / 1d)
-- Кэш истории за неделю
 - Уведомления при резком изменении цены
-- Больше криптовалютных пар
+- Больше криптовалютных пар и американских акций
+- Кэш истории за месяц
