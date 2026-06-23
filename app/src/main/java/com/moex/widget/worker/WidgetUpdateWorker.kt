@@ -230,7 +230,7 @@ class WidgetUpdateWorker(
                 dbCandles.filter { it.time >= cutoff }
             }
             PERIOD_WEEKLY -> {
-                val cutoff = now - 7L * 24 * 60 * 60 * 1000
+                val cutoff = now - 10L * 24 * 60 * 60 * 1000
                 dbCandles.filter { it.time >= cutoff }
             }
             else -> dbCandles  // daily — all 30 days

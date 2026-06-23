@@ -145,7 +145,7 @@ class ChartRenderer(
 
             // Draw vertical grid + time labels
             val timeLabels = minOf(candles.size, 6)
-            val step = maxOf(1, candles.size / timeLabels)
+            val step = maxOf(1, (candles.size + timeLabels - 1) / timeLabels)
             Log.d(TAG, "render: timeLabels=$timeLabels, step=$step")
             for (i in 0 until candles.size step step) {
                 val labelIndex = i / step
