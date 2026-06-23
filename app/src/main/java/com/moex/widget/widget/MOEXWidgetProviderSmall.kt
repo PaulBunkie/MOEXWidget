@@ -68,6 +68,9 @@ class MOEXWidgetProviderSmall : AppWidgetProvider() {
                     Log.w(TAG, "Period toggle: invalid widget ID (small)")
                 }
             }
+            else -> {
+                super.onReceive(context, intent)
+            }
         }
     }
 
@@ -97,6 +100,8 @@ class MOEXWidgetProviderSmall : AppWidgetProvider() {
 
         /**
          * Sets up click handling on the small widget to trigger manual refresh.
+         * Uses MOEXWidgetProviderSmall as the intent target so that onReceive()
+         * on the small provider is invoked, not the large one.
          */
         fun updateWidgetClickHandler(
             context: Context,
@@ -104,7 +109,34 @@ class MOEXWidgetProviderSmall : AppWidgetProvider() {
             appWidgetId: Int
         ) {
             Log.d(TAG, "updateWidgetClickHandler: setting up for widget $appWidgetId")
-            MOEXWidgetProvider.updateWidgetClickHandler(context, remoteViews, appWidgetId)
+
+            val refreshIntent = android.content.Intent(context, MOEXWidgetProviderSmall::class.java).apply {
+                action = MOEXWidgetProvider.ACTION_MANUAL_REFRESH
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            }
+
+            val refreshPendingIntent = android.app.PendingIntent.getBroadcast(
+                context,
+                appWidgetId * 2,
+                refreshIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val togglePeriodIntent = android.content.Intent(context, MOEXWidgetProviderSmall::class.java).apply {
+                action = MOEXWidgetProvider.ACTION_TOGGLE_PERIOD
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            }
+
+            val togglePeriodPendingIntent = android.app.PendingIntent.getBroadcast(
+                context,
+                appWidgetId * 2 + 1,
+                togglePeriodIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            remoteViews.setOnClickPendingIntent(R.id.chart_image, togglePeriodPendingIntent)
+            remoteViews.setOnClickPendingIntent(R.id.ticker_text, refreshPendingIntent)
+            remoteViews.setOnClickPendingIntent(R.id.price_text, refreshPendingIntent)
         }
     }
 }

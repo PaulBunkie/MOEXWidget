@@ -257,7 +257,7 @@ class WidgetUpdateWorker(
         Log.d(TAG, "updateSingleWidget: rendering chart bitmap")
         val displayMetrics = context.resources.displayMetrics
         val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
-        val labelTextSize = if (isTablet) 20f else 40f
+        val labelTextSize = if (isTablet) 29f else 58f
         val commonHeight = (200 * displayMetrics.density).toInt()
         val useDailyFormat = period == PERIOD_DAILY || period == PERIOD_WEEKLY
         val bitmap: Bitmap? = if (isSmallWidget) {
@@ -399,10 +399,9 @@ class WidgetUpdateWorker(
             val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
             val remoteViews = RemoteViews(context.packageName, layoutRes)
 
-            val titleSizeSp = if (isTablet) 14.67f else 14f
-            val titleSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, titleSizeSp, context.resources.displayMetrics).toInt()
-            remoteViews.setTextViewTextSize(R.id.ticker_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
-            remoteViews.setTextViewTextSize(R.id.price_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
+            val titleSizeSp = if (isTablet) 17f else 16f
+            remoteViews.setTextViewTextSize(R.id.ticker_text, TypedValue.COMPLEX_UNIT_SP, titleSizeSp)
+            remoteViews.setTextViewTextSize(R.id.price_text, TypedValue.COMPLEX_UNIT_SP, titleSizeSp)
 
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
             remoteViews.setTextViewText(R.id.price_text, String.format("%.2f", priceHeader))
@@ -431,10 +430,9 @@ class WidgetUpdateWorker(
             val remoteViews = RemoteViews(context.packageName, layoutRes)
 
             val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
-            val titleSizeSp = if (isTablet) 14.67f else 14f
-            val titleSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, titleSizeSp, context.resources.displayMetrics).toInt()
-            remoteViews.setTextViewTextSize(R.id.ticker_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
-            remoteViews.setTextViewTextSize(R.id.price_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
+            val titleSizeSp = if (isTablet) 17f else 16f
+            remoteViews.setTextViewTextSize(R.id.ticker_text, TypedValue.COMPLEX_UNIT_SP, titleSizeSp)
+            remoteViews.setTextViewTextSize(R.id.price_text, TypedValue.COMPLEX_UNIT_SP, titleSizeSp)
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
             remoteViews.setTextViewText(R.id.price_text, "N/A")
 
