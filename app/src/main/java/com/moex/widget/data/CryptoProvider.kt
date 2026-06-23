@@ -58,6 +58,34 @@ class CryptoProvider(
         }
     }
 
+    override fun fetchDailyCandles(days: Int): Result<List<Candle>> {
+        if (!isNetworkAvailable()) {
+            return Result.failure(Exception("No internet connection"))
+        }
+
+        return try {
+            // Binance API endpoint for daily klines (candles)
+            val url = "https://api.binance.com/api/v3/klines?symbol=$symbol&interval=1d&limit=$days"
+
+            val request = Request.Builder()
+                .url(url)
+                .header("Accept", "application/json")
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: return Result.failure(Exception("Empty response"))
+
+            if (!response.isSuccessful) {
+                return Result.failure(Exception("HTTP ${response.code}: $body"))
+            }
+
+            val candles = parseBinanceResponse(body)
+            Result.success(candles)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     /**
      * Parses Binance klines response into list of Candle objects.
      *

@@ -50,6 +50,40 @@ class MoexApiClient(context: Context, private val ticker: String = "SBER") : Pri
     }
 
     /**
+     * Fetches daily candle data for the given number of days.
+     * MOEX ISS API interval=24 returns daily candles.
+     */
+    override fun fetchDailyCandles(days: Int): Result<List<Candle>> {
+        if (!isNetworkAvailable()) {
+            return Result.failure(Exception("No internet connection"))
+        }
+
+        return try {
+            val endDate = Date()
+            val startDate = Date(System.currentTimeMillis() - days.toLong() * 24 * 60 * 60 * 1000L)
+
+            val url = buildCandlesUrl(ticker, startDate, endDate, 24)
+
+            val request = Request.Builder()
+                .url(url)
+                .header("Accept", "application/json")
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: return Result.failure(Exception("Empty response"))
+
+            if (!response.isSuccessful) {
+                return Result.failure(Exception("HTTP ${response.code}: $body"))
+            }
+
+            val candles = parseCandlesResponse(body)
+            Result.success(candles)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Fetches candles for the last 24 hours for a given ticker.
      * Uses 60-minute interval candles.
      */

@@ -51,6 +51,14 @@
                 android:textSize="16sp"
                 android:padding="8dp" />
 
+            <RadioButton
+                android:id="@+id/radioYahoo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Yahoo (US Акции)"
+                android:textSize="16sp"
+                android:padding="8dp" />
+
         </RadioGroup>
 
         <TextView

@@ -2,7 +2,7 @@ package com.moex.widget.data
 
 /**
  * Represents a financial instrument that can be displayed in the widget.
- * Supports both MOEX stocks and cryptocurrency pairs.
+ * Supports MOEX stocks, cryptocurrency pairs, and US stocks (Yahoo Finance).
  */
 sealed class Instrument {
     /**
@@ -23,6 +23,15 @@ sealed class Instrument {
         override val type: String get() = "CRYPTO"
     }
 
+    /**
+     * Represents a US stock from Yahoo Finance.
+     * @property ticker The stock ticker symbol (e.g., "AAPL", "NVDA")
+     */
+    data class YahooStock(val ticker: String) : Instrument() {
+        override val displayName: String get() = ticker
+        override val type: String get() = "YAHOO"
+    }
+
     abstract val displayName: String
     abstract val type: String
 
@@ -32,6 +41,7 @@ sealed class Instrument {
     fun toKey(): String = "$type:${when (this) {
         is Stock -> ticker
         is Crypto -> symbol
+        is YahooStock -> ticker
     }}"
 
     companion object {
@@ -45,27 +55,38 @@ sealed class Instrument {
             return when (parts[0]) {
                 "STOCK" -> Stock(parts[1])
                 "CRYPTO" -> Crypto(parts[1])
+                "YAHOO" -> YahooStock(parts[1])
                 else -> throw IllegalArgumentException("Unknown instrument type: ${parts[0]}")
             }
         }
 
         /**
-         * List of popular MOEX stocks for quick selection.
+         * List of popular MOEX stocks for quick selection (sorted alphabetically).
          */
         val POPULAR_STOCKS = listOf(
-            "SBER", "GAZP", "LKOH", "YNDX", "GMKN",
-            "ROSN", "SNGS", "TCSG", "VTBR", "ALRS",
-            "AFLT", "MGNT", "PHOR", "PLZL", "TATN",
-            "HYDR", "IRAO", "MOEX", "MTSS", "RUAL"
+            "AFLT", "ALRS", "GAZP", "GMKN", "HYDR",
+            "IRAO", "LKOH", "MGNT", "MOEX", "MTSS",
+            "PHOR", "PLZL", "ROSN", "RUAL", "SBER",
+            "SNGS", "TATN", "TCSG", "VTBR", "YNDX"
         )
 
         /**
-         * List of popular cryptocurrency pairs for quick selection.
+         * List of popular cryptocurrency pairs for quick selection (sorted alphabetically).
          */
         val POPULAR_CRYPTOS = listOf(
-            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-            "DOGEUSDT", "ADAUSDT", "DOTUSDT", "MATICUSDT", "SHIBUSDT",
-            "AVAXUSDT", "LINKUSDT", "UNIUSDT", "ATOMUSDT", "LTCUSDT"
+            "ADAUSDT", "ATOMUSDT", "AVAXUSDT", "BNBUSDT", "BTCUSDT",
+            "DOGEUSDT", "DOTUSDT", "ETHUSDT", "LINKUSDT", "LTCUSDT",
+            "MATICUSDT", "SHIBUSDT", "SOLUSDT", "UNIUSDT", "XRPUSDT"
+        )
+
+        /**
+         * List of popular US stocks (Yahoo Finance) for quick selection (sorted alphabetically).
+         */
+        val POPULAR_YAHOO_STOCKS = listOf(
+            "AAPL", "AMD", "AMZN", "BA", "CRM",
+            "DIS", "GOOGL", "INTC", "JNJ", "JPM",
+            "KO", "MA", "META", "MSFT", "NFLX",
+            "NVDA", "PYPL", "TSLA", "V", "WMT"
         )
     }
 }

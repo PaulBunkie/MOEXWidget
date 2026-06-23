@@ -59,6 +59,7 @@ class WidgetConfigActivity : AppCompatActivity() {
             when (checkedId) {
                 R.id.radioMoex -> showStockList(instrumentContainer)
                 R.id.radioCrypto -> showCryptoList(instrumentContainer)
+                R.id.radioYahoo -> showYahooList(instrumentContainer)
             }
         }
 
@@ -124,6 +125,25 @@ class WidgetConfigActivity : AppCompatActivity() {
 
             radioButton.setOnClickListener {
                 selectedInstrument = Instrument.Crypto(crypto)
+            }
+
+            container.addView(radioButton)
+        }
+    }
+
+    private fun showYahooList(container: LinearLayout) {
+        val yahooStocks = Instrument.POPULAR_YAHOO_STOCKS
+
+        for (stock in yahooStocks) {
+            val radioButton = RadioButton(this).apply {
+                text = stock
+                id = android.view.View.generateViewId()
+                setPadding(16, 8, 16, 8)
+                textSize = 16f
+            }
+
+            radioButton.setOnClickListener {
+                selectedInstrument = Instrument.YahooStock(stock)
             }
 
             container.addView(radioButton)

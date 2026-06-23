@@ -22,6 +22,7 @@ import com.moex.widget.data.CryptoProvider
 import com.moex.widget.data.Instrument
 import com.moex.widget.data.MoexApiClient
 import com.moex.widget.data.PriceProvider
+import com.moex.widget.data.YahooProvider
 import com.moex.widget.widget.MOEXWidgetProvider
 import com.moex.widget.widget.MOEXWidgetProviderSmall
 import java.util.concurrent.TimeUnit
@@ -61,7 +62,7 @@ class WidgetUpdateWorker(
         // Each widget gets its own data fetch and bitmap render
         for (appWidgetId in idsToUpdate) {
             try {
-                updateSingleWidget(applicationContext, appWidgetId, widgetManager, largeProvider, smallProvider, isPeriodToggle)
+                updateSingleWidget(applicationContext, appWidgetId, widgetManager, isPeriodToggle)
             } catch (e: Exception) {
                 Log.e(TAG, "Error updating widget $appWidgetId", e)
                 try {
@@ -79,8 +80,6 @@ class WidgetUpdateWorker(
         context: Context,
         appWidgetId: Int,
         widgetManager: AppWidgetManager,
-        largeProvider: ComponentName,
-        smallProvider: ComponentName,
         isPeriodToggle: Boolean = false
     ) {
         // 1. Determine widget size
@@ -108,16 +107,20 @@ class WidgetUpdateWorker(
         val provider: PriceProvider = when (instrument) {
             is Instrument.Stock -> MoexApiClient(context, instrument.ticker)
             is Instrument.Crypto -> CryptoProvider(context, instrument.symbol)
+            is Instrument.YahooStock -> YahooProvider(context, instrument.ticker)
         }
         val displayName = provider.getDisplayName()
 
         // 4. Fetch fresh data (skip on period toggle — only re-render from DB)
+        var lastHourlyClose: Double? = null
+
         if (!isPeriodToggle) {
-            val fetchResult = provider.fetch24hCandles()
-            if (fetchResult.isSuccess) {
-                val freshCandles = fetchResult.getOrThrow()
-                // Save to Room database
-                val entities = freshCandles.map { candle ->
+            // 4a. Fetch hourly candles (1h) for the last 24 hours
+            val hourlyResult = provider.fetch24hCandles()
+            if (hourlyResult.isSuccess) {
+                val hourlyCandles = hourlyResult.getOrThrow()
+                lastHourlyClose = hourlyCandles.lastOrNull()?.close
+                val hourlyEntities = hourlyCandles.map { candle ->
                     CandleEntity(
                         instrumentKey = instrumentKey,
                         time = candle.time,
@@ -125,46 +128,64 @@ class WidgetUpdateWorker(
                         high = candle.high,
                         low = candle.low,
                         close = candle.close,
-                        period = "1h",
+                        period = PERIOD_HOURLY,
                         appWidgetId = appWidgetId
                     )
                 }
-                // Clear old data for this widget before inserting fresh candles
-                dao.deleteCandlesForWidget(instrumentKey, appWidgetId)
-                dao.insertCandles(entities)
-                Log.d(TAG, "Saved ${entities.size} candles for $instrumentKey widget $appWidgetId")
+                // Clear old hourly data for this widget before inserting fresh
+                dao.deleteCandlesForWidgetByPeriod(instrumentKey, appWidgetId, PERIOD_HOURLY)
+                dao.insertCandles(hourlyEntities)
+                Log.d(TAG, "Saved ${hourlyEntities.size} hourly candles for $instrumentKey widget $appWidgetId")
             } else {
-                Log.w(TAG, "API fetch failed for $instrumentKey, using DB history")
-                // Seed synthetic data only as fallback when API fails and DB is empty
-                val existingCandles = dao.getCandles(instrumentKey, appWidgetId, "1h")
-                if (existingCandles.isEmpty()) {
-                    val lastClose = 0.0
-                    val syntheticEntities = generateFlatHistory(instrumentKey, appWidgetId, lastClose)
-                    dao.insertCandles(syntheticEntities)
-                    Log.d(TAG, "Seeded ${syntheticEntities.size} fallback synthetic candles for widget $appWidgetId")
+                Log.w(TAG, "Hourly API fetch failed for $instrumentKey: ${hourlyResult.exceptionOrNull()?.message}")
+            }
+
+            // 4b. Fetch daily candles (1d) for the last 30 days
+            val dailyResult = provider.fetchDailyCandles(30)
+            if (dailyResult.isSuccess) {
+                val dailyCandles = dailyResult.getOrThrow()
+                val dailyEntities = dailyCandles.map { candle ->
+                    CandleEntity(
+                        instrumentKey = instrumentKey,
+                        time = candle.time,
+                        open = candle.open,
+                        high = candle.high,
+                        low = candle.low,
+                        close = candle.close,
+                        period = PERIOD_DAILY,
+                        appWidgetId = appWidgetId
+                    )
                 }
+                // Clear old daily data for this widget before inserting fresh
+                dao.deleteCandlesForWidgetByPeriod(instrumentKey, appWidgetId, PERIOD_DAILY)
+                dao.insertCandles(dailyEntities)
+                Log.d(TAG, "Saved ${dailyEntities.size} daily candles for $instrumentKey widget $appWidgetId")
+            } else {
+                Log.w(TAG, "Daily API fetch failed for $instrumentKey: ${dailyResult.exceptionOrNull()?.message}")
             }
         }
 
-        // 5. Read all history from DB (always from DB, never from API response directly)
-        val dbCandles = if (period == PERIOD_DAILY) {
-            dao.getAllCandles(instrumentKey, appWidgetId)
-        } else {
-            dao.getCandles(instrumentKey, appWidgetId, period)
-        }
+        // 5. Read history from DB based on current period
+        val dbCandles = dao.getCandles(instrumentKey, appWidgetId, period)
         if (dbCandles.isEmpty()) {
-            Log.w(TAG, "No candles in DB for $instrumentKey, showing error")
+            Log.w(TAG, "No candles in DB for $instrumentKey period $period, showing error")
             showErrorForWidget(context, appWidgetId, isSmallWidget, displayName)
             return
         }
 
         // Convert entities to Candle for rendering
-        val candlesForRender = if (period == PERIOD_DAILY) {
-            aggregateDailyCandles(dbCandles)
+        val candlesForRender = dbCandles.map { entity ->
+            Candle(entity.time, entity.open, entity.high, entity.low, entity.close)
+        }
+
+        // Always use the latest hourly close for the price display in the header
+        // (if hourly fetch wasn't done this cycle, read it from DB)
+        val latestPrice: Double
+        if (lastHourlyClose != null) {
+            latestPrice = lastHourlyClose
         } else {
-            dbCandles.map { entity ->
-                Candle(entity.time, entity.open, entity.high, entity.low, entity.close)
-            }
+            val hourlyFromDb = dao.getCandles(instrumentKey, appWidgetId, PERIOD_HOURLY)
+            latestPrice = hourlyFromDb.lastOrNull()?.close ?: 0.0
         }
 
         // 6. Render bitmap for this widget's size
@@ -190,8 +211,8 @@ class WidgetUpdateWorker(
             renderer.render(candlesForRender)
         }
 
-        // 7. Update the widget
-        updateWidget(displayName, candlesForRender, bitmap, context, appWidgetId, isSmallWidget, isTablet, period)
+        // 7. Update the widget (always show hourly price in header)
+        updateWidget(displayName, candlesForRender, bitmap, context, appWidgetId, isSmallWidget, isTablet, period, latestPrice)
     }
 
     private fun showErrorForWidget(
@@ -210,6 +231,7 @@ class WidgetUpdateWorker(
         private const val DEFAULT_INSTRUMENT_KEY = "STOCK:SBER"
         const val KEY_PERIOD_TOGGLE = "periodToggle"
         private const val DEFAULT_PERIOD = "1h"
+        private const val PERIOD_HOURLY = "1h"
         private const val PERIOD_DAILY = "1d"
 
         fun enqueueRefresh(context: Context, instrumentKey: String, appWidgetIds: IntArray) {
@@ -254,16 +276,6 @@ class WidgetUpdateWorker(
             return prefs.getString(key, DEFAULT_INSTRUMENT_KEY) ?: DEFAULT_INSTRUMENT_KEY
         }
 
-        private fun isSyntheticSeeded(context: Context, appWidgetId: Int): Boolean {
-            val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
-            return prefs.getBoolean("syntheticSeeded_$appWidgetId", false)
-        }
-
-        private fun markSyntheticSeeded(context: Context, appWidgetId: Int) {
-            val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
-            prefs.edit().putBoolean("syntheticSeeded_$appWidgetId", true).apply()
-        }
-
         private fun getPeriodForWidget(context: Context, appWidgetId: Int): String {
             val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
             val key = "period_$appWidgetId"
@@ -280,67 +292,6 @@ class WidgetUpdateWorker(
             return newPeriod
         }
 
-        private fun aggregateDailyCandles(hourlyCandles: List<CandleEntity>): List<Candle> {
-            val sortedCandles = hourlyCandles.sortedBy { it.time }
-            val grouped = sortedCandles
-                .groupBy { it.time / 86400000L } // Group by day (milliseconds per day)
-                .mapValues { (_, dayCandles) ->
-                    val open = dayCandles.first().open
-                    val high = dayCandles.maxOf { it.high }
-                    val low = dayCandles.minOf { it.low }
-                    val close = dayCandles.last().close
-                    val time = dayCandles.first().time
-                    Candle(time, open, high, low, close)
-                }
-
-            if (grouped.isEmpty()) return emptyList()
-
-            // Pad to 7 days with flat price (current close price)
-            val now = System.currentTimeMillis()
-            val currentPrice = hourlyCandles.lastOrNull()?.close ?: return grouped.values.toList()
-            val result = mutableListOf<Candle>()
-            for (dayOffset in 6 downTo 0) {
-                val dayTime = now - dayOffset * 86400000L
-                val dayKey = dayTime / 86400000L
-                val existing = grouped[dayKey]
-                if (existing != null) {
-                    result.add(existing)
-                } else {
-                    // Pad with flat price
-                    result.add(Candle(dayTime, currentPrice, currentPrice, currentPrice, currentPrice))
-                }
-            }
-            return result
-        }
-
-        /**
-         * Generates flat synthetic candles (all OHLC = basePrice) for the past 6 days.
-         * Used to populate DB for daily chart preview when there's no real history.
-         */
-        private fun generateFlatHistory(instrumentKey: String, appWidgetId: Int, basePrice: Double): List<CandleEntity> {
-            val now = System.currentTimeMillis()
-            val synthetic = mutableListOf<CandleEntity>()
-            val startTime = now - 6L * 24 * 60 * 60 * 1000
-            for (dayOffset in 0..5) {
-                for (hourInDay in 0..23) {
-                    val time = startTime + (dayOffset * 24L + hourInDay) * 60 * 60 * 1000
-                    synthetic.add(
-                        CandleEntity(
-                            instrumentKey = instrumentKey,
-                            time = time,
-                            open = basePrice,
-                            high = basePrice,
-                            low = basePrice,
-                            close = basePrice,
-                            period = "1h",
-                            appWidgetId = appWidgetId
-                        )
-                    )
-                }
-            }
-            return synthetic
-        }
-
         private fun updateWidget(
             displayName: String,
             candles: List<Candle>,
@@ -349,7 +300,8 @@ class WidgetUpdateWorker(
             appWidgetId: Int,
             isSmallWidget: Boolean,
             isTablet: Boolean,
-            period: String = DEFAULT_PERIOD
+            period: String = DEFAULT_PERIOD,
+            priceHeader: Double = candles.lastOrNull()?.close ?: 0.0
         ) {
             val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
             val remoteViews = RemoteViews(context.packageName, layoutRes)
@@ -360,8 +312,7 @@ class WidgetUpdateWorker(
             remoteViews.setTextViewTextSize(R.id.price_text, TypedValue.COMPLEX_UNIT_PX, titleSizePx.toFloat())
 
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
-            val price = candles.lastOrNull()?.close ?: 0.0
-            remoteViews.setTextViewText(R.id.price_text, String.format("%.2f", price))
+            remoteViews.setTextViewText(R.id.price_text, String.format("%.2f", priceHeader))
 
             bitmap?.let { remoteViews.setImageViewBitmap(R.id.chart_image, it) }
 
