@@ -190,9 +190,26 @@ class WidgetUpdateWorker(
             Log.d(TAG, "updateSingleWidget: period toggle, skipping API fetch")
         }
 
-        // 5. Read history from DB based on current period
-        Log.d(TAG, "updateSingleWidget: reading candles from DB for $instrumentKey, period=$period")
-        val dbCandles = dao.getCandles(instrumentKey, appWidgetId, period)
+        // 4c. Clean up old data and VACUUM (once daily on initial load)
+        if (!isPeriodToggle) {
+            val hourlyCutoff = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+            val deletedHourly = dao.deleteOldHourly(hourlyCutoff)
+            if (deletedHourly > 0) Log.d(TAG, "updateSingleWidget: cleaned $deletedHourly old hourly candles")
+
+            val dailyCutoff = System.currentTimeMillis() - 60L * 24 * 60 * 60 * 1000
+            val deletedDaily = dao.deleteOldDaily(dailyCutoff)
+            if (deletedDaily > 0) Log.d(TAG, "updateSingleWidget: cleaned $deletedDaily old daily candles")
+
+            if (isInitialLoad && (deletedHourly > 0 || deletedDaily > 0)) {
+                Log.d(TAG, "updateSingleWidget: running VACUUM")
+                db.openHelper.writableDatabase.execSQL("PRAGMA vacuum")
+            }
+        }
+
+        // 5. Read history from DB (weekly uses daily data from DB)
+        val queryPeriod = if (period == PERIOD_WEEKLY) PERIOD_DAILY else period
+        Log.d(TAG, "updateSingleWidget: reading candles from DB for $instrumentKey, period=$period (query=$queryPeriod)")
+        val dbCandles = dao.getCandles(instrumentKey, appWidgetId, queryPeriod)
         Log.d(TAG, "updateSingleWidget: retrieved ${dbCandles.size} candles from DB")
         if (dbCandles.isNotEmpty()) {
             Log.d(TAG, "updateSingleWidget: DB first=${dbCandles.first().time} (${Date(dbCandles.first().time)}), last=${dbCandles.last().time} (${Date(dbCandles.last().time)})")
@@ -205,11 +222,19 @@ class WidgetUpdateWorker(
 
         Log.d(TAG, "updateSingleWidget: candle closes: ${dbCandles.map { it.close }.take(5)}...")
 
-        // For hourly, render only last 24h (DB keeps all data)
-        val renderEntities = if (period == PERIOD_HOURLY) {
-            val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
-            dbCandles.filter { it.time >= cutoff }
-        } else dbCandles
+        // Filter data for rendering based on period
+        val now = System.currentTimeMillis()
+        val renderEntities = when (period) {
+            PERIOD_HOURLY -> {
+                val cutoff = now - 24L * 60 * 60 * 1000
+                dbCandles.filter { it.time >= cutoff }
+            }
+            PERIOD_WEEKLY -> {
+                val cutoff = now - 7L * 24 * 60 * 60 * 1000
+                dbCandles.filter { it.time >= cutoff }
+            }
+            else -> dbCandles  // daily — all 30 days
+        }
         Log.d(TAG, "updateSingleWidget: rendering ${renderEntities.size} of ${dbCandles.size} candles (period=$period)")
 
         // Convert entities to Candle for rendering
@@ -234,10 +259,11 @@ class WidgetUpdateWorker(
         val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
         val labelTextSize = if (isTablet) 20f else 40f
         val commonHeight = (200 * displayMetrics.density).toInt()
+        val useDailyFormat = period == PERIOD_DAILY || period == PERIOD_WEEKLY
         val bitmap: Bitmap? = if (isSmallWidget) {
             val size = commonHeight
             Log.d(TAG, "updateSingleWidget: rendering small widget, size=$size")
-            val renderer = if (period == PERIOD_DAILY) {
+            val renderer = if (useDailyFormat) {
                 ChartRenderer(size, size, true, labelTextSize, timeLabelStep = 2, timeLabelOffset = 1, timeLabelFormat = "dd.MM")
             } else {
                 ChartRenderer(size, size, true, labelTextSize, timeLabelStep = 2, timeLabelOffset = 1, timeLabelFormat = "HH:mm")
@@ -246,7 +272,7 @@ class WidgetUpdateWorker(
         } else {
             val w = (350 * displayMetrics.density).toInt()
             Log.d(TAG, "updateSingleWidget: rendering large widget, w=$w, h=$commonHeight")
-            val renderer = if (period == PERIOD_DAILY) {
+            val renderer = if (useDailyFormat) {
                 ChartRenderer(w, commonHeight, true, labelTextSize, timeLabelStep = 1, timeLabelOffset = 0, timeLabelFormat = "dd.MM")
             } else {
                 ChartRenderer(w, commonHeight, true, labelTextSize, timeLabelFormat = "HH:mm")
@@ -284,7 +310,9 @@ class WidgetUpdateWorker(
         const val KEY_INITIAL_LOAD = "initialLoad"
         private const val DEFAULT_PERIOD = "1h"
         private const val PERIOD_HOURLY = "1h"
+        private const val PERIOD_WEEKLY = "1w"
         private const val PERIOD_DAILY = "1d"
+        private val PERIOD_CYCLE = listOf(PERIOD_HOURLY, PERIOD_WEEKLY, PERIOD_DAILY)
 
         fun enqueueRefresh(context: Context, instrumentKey: String, appWidgetIds: IntArray, isInitialLoad: Boolean = false) {
             Log.d(TAG, "enqueueRefresh: instrumentKey=$instrumentKey, ids=${appWidgetIds.contentToString()}, isInitialLoad=$isInitialLoad")
@@ -349,7 +377,8 @@ class WidgetUpdateWorker(
             val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
             val key = "period_$appWidgetId"
             val currentPeriod = prefs.getString(key, DEFAULT_PERIOD) ?: DEFAULT_PERIOD
-            val newPeriod = if (currentPeriod == PERIOD_DAILY) DEFAULT_PERIOD else PERIOD_DAILY
+            val currentIndex = PERIOD_CYCLE.indexOf(currentPeriod).coerceAtLeast(0)
+            val newPeriod = PERIOD_CYCLE[(currentIndex + 1) % PERIOD_CYCLE.size]
             prefs.edit().putString(key, newPeriod).apply()
             Log.d(TAG, "Toggled period for widget $appWidgetId: $currentPeriod → $newPeriod")
             return newPeriod

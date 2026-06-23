@@ -32,4 +32,16 @@ interface CandleDao {
      */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCandles(candles: List<CandleEntity>)
+
+    /**
+     * Deletes hourly candles older than cutoffMs (keeps 7 days of hourly data).
+     */
+    @Query("DELETE FROM candles WHERE period = '1h' AND time < :cutoffMs")
+    suspend fun deleteOldHourly(cutoffMs: Long): Int
+
+    /**
+     * Deletes daily candles older than cutoffMs (keeps 60 days of daily data).
+     */
+    @Query("DELETE FROM candles WHERE period = '1d' AND time < :cutoffMs")
+    suspend fun deleteOldDaily(cutoffMs: Long): Int
 }
