@@ -27,6 +27,8 @@ class WidgetConfigActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_widget_config)
 
+        Log.d(TAG, "onCreate: WidgetConfigActivity started")
+
         // Set the result to CANCELED in case the user backs out
         setResult(RESULT_CANCELED)
 
@@ -35,8 +37,10 @@ class WidgetConfigActivity : AppCompatActivity() {
             AppWidgetManager.EXTRA_APPWIDGET_ID,
             AppWidgetManager.INVALID_APPWIDGET_ID
         ) ?: AppWidgetManager.INVALID_APPWIDGET_ID
+        Log.d(TAG, "onCreate: appWidgetId=$appWidgetId")
 
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
+            Log.w(TAG, "onCreate: invalid appWidgetId, finishing")
             finish()
             return
         }
@@ -51,9 +55,11 @@ class WidgetConfigActivity : AppCompatActivity() {
         val titleText = findViewById<TextView>(R.id.titleText)
 
         titleText.text = getString(R.string.widget_config_title)
+        Log.d(TAG, "setupUI: UI initialized, waiting for market selection")
 
         // Market selection
         marketRadioGroup.setOnCheckedChangeListener { _, checkedId ->
+            Log.d(TAG, "setupUI: market selection changed, checkedId=$checkedId")
             instrumentContainer.removeAllViews()
 
             when (checkedId) {
@@ -82,10 +88,12 @@ class WidgetConfigActivity : AppCompatActivity() {
                 WidgetUpdateWorker.enqueueRefresh(
                     this,
                     instrument.toKey(),
-                    intArrayOf(appWidgetId)
+                    intArrayOf(appWidgetId),
+                    isInitialLoad = true
                 )
 
                 finish()
+                Log.d(TAG, "WidgetConfigActivity finished successfully")
             } else {
                 Log.w(TAG, "No instrument selected!")
             }
@@ -93,6 +101,7 @@ class WidgetConfigActivity : AppCompatActivity() {
     }
 
     private fun showStockList(container: LinearLayout) {
+        Log.d(TAG, "showStockList: showing MOEX stock list")
         val stocks = Instrument.POPULAR_STOCKS
 
         for (stock in stocks) {
@@ -105,6 +114,7 @@ class WidgetConfigActivity : AppCompatActivity() {
 
             radioButton.setOnClickListener {
                 selectedInstrument = Instrument.Stock(stock)
+                Log.d(TAG, "Stock selected: $stock")
             }
 
             container.addView(radioButton)
@@ -114,6 +124,7 @@ class WidgetConfigActivity : AppCompatActivity() {
     }
 
     private fun showCryptoList(container: LinearLayout) {
+        Log.d(TAG, "showCryptoList: showing crypto list")
         val cryptos = Instrument.POPULAR_CRYPTOS
 
         for (crypto in cryptos) {
@@ -127,6 +138,7 @@ class WidgetConfigActivity : AppCompatActivity() {
 
             radioButton.setOnClickListener {
                 selectedInstrument = Instrument.Crypto(crypto)
+                Log.d(TAG, "Crypto selected: $crypto")
             }
 
             container.addView(radioButton)
@@ -136,6 +148,7 @@ class WidgetConfigActivity : AppCompatActivity() {
     }
 
     private fun showYahooList(container: LinearLayout) {
+        Log.d(TAG, "showYahooList: showing Yahoo stock list")
         val yahooStocks = Instrument.POPULAR_YAHOO_STOCKS
 
         for (stock in yahooStocks) {
@@ -148,6 +161,7 @@ class WidgetConfigActivity : AppCompatActivity() {
 
             radioButton.setOnClickListener {
                 selectedInstrument = Instrument.YahooStock(stock)
+                Log.d(TAG, "Yahoo stock selected: $stock")
             }
 
             container.addView(radioButton)
@@ -173,6 +187,7 @@ class WidgetConfigActivity : AppCompatActivity() {
     }
 
     private fun saveInstrument(instrument: Instrument) {
+        Log.d(TAG, "saveInstrument: saving instrument for widget $appWidgetId")
         val prefs = getSharedPreferences("widget_prefs", MODE_PRIVATE)
         val key = "instrument_$appWidgetId"
         val value = instrument.toKey()
@@ -191,6 +206,11 @@ class WidgetConfigActivity : AppCompatActivity() {
             .putBoolean("small_$appWidgetId", isSmall)
             .commit()
         Log.d(TAG, "saveInstrument commit result=$result")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d(TAG, "onDestroy: WidgetConfigActivity destroyed")
     }
 
     companion object {

@@ -23,21 +23,26 @@ class MOEXWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
+        Log.d(TAG, "onUpdate: called with ${appWidgetIds.size} widgets, ids=${appWidgetIds.joinToString()}")
         // Schedule periodic updates if not already scheduled
         WidgetUpdateWorker.schedulePeriodic(context)
 
         // Trigger immediate data refresh for all widget instances
         for (appWidgetId in appWidgetIds) {
+            val key = getInstrumentForWidget(context, appWidgetId)
+            Log.d(TAG, "onUpdate: widget $appWidgetId -> instrument=$key")
             triggerRefresh(context, appWidgetId)
         }
     }
 
     override fun onEnabled(context: Context) {
+        Log.d(TAG, "onEnabled: widget added to home screen")
         // Widget added to home screen - schedule periodic updates
         WidgetUpdateWorker.schedulePeriodic(context)
     }
 
     override fun onDisabled(context: Context) {
+        Log.d(TAG, "onDisabled: last widget removed")
         // Last widget removed - nothing to clean up
     }
 
@@ -53,6 +58,7 @@ class MOEXWidgetProvider : AppWidgetProvider() {
                     triggerRefresh(context, appWidgetId)
                 } else {
                     // Fallback: refresh all widgets
+                    Log.w(TAG, "Manual refresh: invalid widget ID, refreshing all")
                     val appWidgetManager = AppWidgetManager.getInstance(context)
                     val thisWidget = ComponentName(context, MOEXWidgetProvider::class.java)
                     val appWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
@@ -66,7 +72,13 @@ class MOEXWidgetProvider : AppWidgetProvider() {
                 val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
                 if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
                     WidgetUpdateWorker.enqueuePeriodToggle(context, intArrayOf(appWidgetId))
+                } else {
+                    Log.w(TAG, "Period toggle: invalid widget ID")
                 }
+            }
+            else -> {
+                // Let the system handle all other actions (APPWIDGET_UPDATE, APPWIDGET_ENABLED, etc.)
+                super.onReceive(context, intent)
             }
         }
     }
@@ -89,6 +101,8 @@ class MOEXWidgetProvider : AppWidgetProvider() {
         const val EXTRA_TICKER = "ticker"
         const val EXTRA_APPWIDGET_IDS = "appWidgetIds"
 
+        private const val TAG = "MOEXWidgetProvider"
+
         /**
          * Returns the instrument key for a given widget instance.
          * Defaults to "STOCK:SBER" if no instrument is configured.
@@ -100,8 +114,6 @@ class MOEXWidgetProvider : AppWidgetProvider() {
             Log.d(TAG, "getInstrumentForWidget: key=$key, value=$value")
             return value
         }
-
-        private const val TAG = "MOEXWidgetProvider"
 
         /**
          * Sets up click handling on the widget to trigger manual refresh.

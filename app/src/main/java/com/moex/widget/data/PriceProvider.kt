@@ -9,7 +9,7 @@ interface PriceProvider {
      * Fetches 24-hour candle data (hourly candles) for the given instrument.
      * @return Result containing list of candles or an error
      */
-    fun fetch24hCandles(): Result<List<Candle>>
+    fun fetch24hCandles(days: Int): Result<List<Candle>>
 
     /**
      * Fetches daily candle data for the given number of days.

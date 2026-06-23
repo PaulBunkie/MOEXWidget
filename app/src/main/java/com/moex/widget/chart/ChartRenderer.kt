@@ -7,11 +7,13 @@ import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.util.Log
 import com.moex.widget.data.Candle
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 /**
  * Renders a line chart of candle close prices as a Bitmap
@@ -26,6 +28,10 @@ class ChartRenderer(
     private val timeLabelOffset: Int = 0,
     private val timeLabelFormat: String = "HH:mm"
 ) {
+    companion object {
+        private const val TAG = "ChartRenderer"
+    }
+
     // Colors
     private val backgroundColor = Color.WHITE
     private val lineColor = Color.parseColor("#1A73E8") // Google Blue
@@ -62,125 +68,103 @@ class ChartRenderer(
     }
 
     private val decimalFormat = DecimalFormat("#,##0.00")
-    private val timeFormat = SimpleDateFormat(timeLabelFormat, Locale.US)
+    private val timeFormat = SimpleDateFormat(timeLabelFormat, Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("Europe/Moscow")
+    }
 
     /**
      * Renders the chart bitmap from candle data.
      * Returns a Bitmap or null if data is invalid.
      */
     fun render(candles: List<Candle>): Bitmap? {
-        if (candles.isEmpty()) return null
-
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-
-        // Background
-        canvas.drawColor(backgroundColor)
-
-        val paddingLeft = 10f
-        val paddingRight = 10f
-        val paddingTop = 5f
-        // Original 20f baseline → paddingBottom 25f. For larger text increase both.
-        val (paddingBottom, labelBaseline) = if (labelTextSize <= 20f) {
-            25f to 20f  // Original settings for large widget (15f text)
-        } else {
-            (labelTextSize + 8f) to (labelTextSize + 3f)  // Small widget (30f text)
+        Log.d(TAG, "render: called with ${candles.size} candles, size=${width}x$height, format=$timeLabelFormat")
+        if (candles.isEmpty()) {
+            Log.w(TAG, "render: empty candles list")
+            return null
         }
+        Log.d(TAG, "render: first candle time=${candles.first().time} (${Date(candles.first().time)}), last=${candles.last().time} (${Date(candles.last().time)})")
 
-        val chartWidth = width - paddingLeft - paddingRight
-        val chartHeight = height - paddingTop - paddingBottom
+        try {
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            Log.d(TAG, "render: bitmap and canvas created")
 
-        if (chartWidth <= 0 || chartHeight <= 0) return bitmap
+            // Background
+            canvas.drawColor(backgroundColor)
 
-        val chartRect = RectF(paddingLeft, paddingTop, paddingLeft + chartWidth, paddingTop + chartHeight)
-
-        // Calculate price range
-        val prices = candles.map { it.close }
-        val minPrice = prices.min()
-        val maxPrice = prices.max()
-        val priceRange = maxPrice - minPrice
-
-        // Determine trend color
-        val isPositive = prices.last() >= prices.first()
-        val trendColor = if (isPositive) positiveColor else negativeColor
-        linePaint.color = trendColor
-
-        // Fill color with alpha
-        val fillAlpha = if (isPositive) positiveFillAlpha else negativeFillAlpha
-
-        // Draw horizontal grid lines
-        val gridLines = 4
-        for (i in 0..gridLines) {
-            val y = chartRect.top + (chartRect.height() * i / gridLines)
-            canvas.drawLine(chartRect.left, y, chartRect.right, y, gridPaint)
-
-            // Price labels (skip the first/top one to avoid artifacts)
-            if (showLabels && i > 0) {
-                val price = maxPrice - (priceRange * i / gridLines)
-                textPaint.textSize = labelTextSize
-                val priceText = decimalFormat.format(price)
-                canvas.drawText(priceText, chartRect.right - textPaint.measureText(priceText) - 2f, y - 2f, textPaint)
+            val paddingLeft = 10f
+            val paddingRight = 10f
+            val paddingTop = 5f
+            // Original 20f baseline → paddingBottom 25f. For larger text increase both.
+            val (paddingBottom, labelBaseline) = if (labelTextSize <= 20f) {
+                25f to 20f  // Original settings for large widget (15f text)
+            } else {
+                (labelTextSize + 8f) to (labelTextSize + 3f)  // Small widget (30f text)
             }
-        }
 
-        // Draw vertical grid + time labels
-        val timeLabels = minOf(candles.size, 6)
-        val step = maxOf(1, candles.size / timeLabels)
-        for (i in 0 until candles.size step step) {
-            val labelIndex = i / step
-            val x = chartRect.left + (chartRect.width() * i / (candles.size - 1).coerceAtLeast(1))
-            canvas.drawLine(x, chartRect.top, x, chartRect.bottom, gridPaint)
+            val chartWidth = width - paddingLeft - paddingRight
+            val chartHeight = height - paddingTop - paddingBottom
+            Log.d(TAG, "render: chart area width=$chartWidth, height=$chartHeight")
 
-            // Time labels at bottom — skip based on step/offset
-            if (showLabels && (labelIndex - timeLabelOffset) % timeLabelStep == 0) {
-                textPaint.textSize = labelTextSize
-                val timeText = timeFormat.format(Date(candles[i].time))
-                // Use dynamic baseline based on text size
-                canvas.drawText(timeText, x - textPaint.measureText(timeText) / 2f, chartRect.bottom + labelBaseline, textPaint)
+            if (chartWidth <= 0 || chartHeight <= 0) {
+                Log.w(TAG, "render: invalid chart dimensions, returning empty bitmap")
+                return bitmap
             }
-        }
 
-        // Draw price line
-        if (candles.size >= 2) {
-            val path = Path()
-            var first = true
+            val chartRect = RectF(paddingLeft, paddingTop, paddingLeft + chartWidth, paddingTop + chartHeight)
 
-            for (i in candles.indices) {
-                val x = chartRect.left + (chartRect.width() * i / (candles.size - 1))
-                val y = if (priceRange == 0.0) {
-                    chartRect.centerY()
-                } else {
-                    chartRect.bottom - (chartRect.height() * (candles[i].close - minPrice) / priceRange)
-                }.toFloat()
+            // Calculate price range
+            val prices = candles.map { it.close }
+            val minPrice = prices.min()
+            val maxPrice = prices.max()
+            val priceRange = maxPrice - minPrice
+            Log.d(TAG, "render: price range: min=$minPrice, max=$maxPrice, range=$priceRange")
 
-                if (first) {
-                    path.moveTo(x, y)
-                    first = false
-                } else {
-                    path.lineTo(x, y)
+            // Determine trend color
+            val isPositive = prices.last() >= prices.first()
+            val trendColor = if (isPositive) positiveColor else negativeColor
+            linePaint.color = trendColor
+
+            // Fill color with alpha
+            val fillAlpha = if (isPositive) positiveFillAlpha else negativeFillAlpha
+
+            // Draw horizontal grid lines
+            val gridLines = 4
+            for (i in 0..gridLines) {
+                val y = chartRect.top + (chartRect.height() * i / gridLines)
+                canvas.drawLine(chartRect.left, y, chartRect.right, y, gridPaint)
+
+                // Price labels (skip the first/top one to avoid artifacts)
+                if (showLabels && i > 0) {
+                    val price = maxPrice - (priceRange * i / gridLines)
+                    textPaint.textSize = labelTextSize
+                    val priceText = decimalFormat.format(price)
+                    canvas.drawText(priceText, chartRect.right - textPaint.measureText(priceText) - 2f, y - 2f, textPaint)
                 }
             }
 
-            canvas.drawPath(path, linePaint)
+            // Draw vertical grid + time labels
+            val timeLabels = minOf(candles.size, 6)
+            val step = maxOf(1, candles.size / timeLabels)
+            Log.d(TAG, "render: timeLabels=$timeLabels, step=$step")
+            for (i in 0 until candles.size step step) {
+                val labelIndex = i / step
+                val x = chartRect.left + (chartRect.width() * i / (candles.size - 1).coerceAtLeast(1))
+                canvas.drawLine(x, chartRect.top, x, chartRect.bottom, gridPaint)
 
-            // Draw fill under the line
-            val fillPath = Path(path)
-            fillPath.lineTo(
-                chartRect.left + chartRect.width(),
-                chartRect.bottom
-            )
-            fillPath.lineTo(chartRect.left, chartRect.bottom)
-            fillPath.close()
-
-            fillPaint.color = Color.argb(fillAlpha, Color.red(trendColor), Color.green(trendColor), Color.blue(trendColor))
-            canvas.drawPath(fillPath, fillPaint)
-
-            // Draw dots on data points (if not too many)
-            if (candles.size <= 48) {
-                val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = trendColor
-                    style = Paint.Style.FILL
+                // Time labels at bottom — skip based on step/offset
+                if (showLabels && (labelIndex - timeLabelOffset) % timeLabelStep == 0) {
+                    textPaint.textSize = labelTextSize
+                    val timeText = timeFormat.format(Date(candles[i].time))
+                    // Use dynamic baseline based on text size
+                    canvas.drawText(timeText, x - textPaint.measureText(timeText) / 2f, chartRect.bottom + labelBaseline, textPaint)
                 }
+            }
+
+            // Draw price line
+            if (candles.size >= 2) {
+                val path = Path()
+                var first = true
 
                 for (i in candles.indices) {
                     val x = chartRect.left + (chartRect.width() * i / (candles.size - 1))
@@ -189,16 +173,58 @@ class ChartRenderer(
                     } else {
                         chartRect.bottom - (chartRect.height() * (candles[i].close - minPrice) / priceRange)
                     }.toFloat()
-                    canvas.drawCircle(x, y, 3f, dotPaint)
-                }
-            }
-        } else if (candles.size == 1) {
-            // Single data point - draw a dot
-            val x = chartRect.centerX()
-            val y = chartRect.centerY()
-            canvas.drawCircle(x, y, 5f, linePaint)
-        }
 
-        return bitmap
+                    if (first) {
+                        path.moveTo(x, y)
+                        first = false
+                    } else {
+                        path.lineTo(x, y)
+                    }
+                }
+
+                canvas.drawPath(path, linePaint)
+
+                // Draw fill under the line
+                val fillPath = Path(path)
+                fillPath.lineTo(
+                    chartRect.left + chartRect.width(),
+                    chartRect.bottom
+                )
+                fillPath.lineTo(chartRect.left, chartRect.bottom)
+                fillPath.close()
+
+                fillPaint.color = Color.argb(fillAlpha, Color.red(trendColor), Color.green(trendColor), Color.blue(trendColor))
+                canvas.drawPath(fillPath, fillPaint)
+
+                // Draw dots on data points (if not too many)
+                if (candles.size <= 48) {
+                    val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = trendColor
+                        style = Paint.Style.FILL
+                    }
+
+                    for (i in candles.indices) {
+                        val x = chartRect.left + (chartRect.width() * i / (candles.size - 1))
+                        val y = if (priceRange == 0.0) {
+                            chartRect.centerY()
+                        } else {
+                            chartRect.bottom - (chartRect.height() * (candles[i].close - minPrice) / priceRange)
+                        }.toFloat()
+                        canvas.drawCircle(x, y, 3f, dotPaint)
+                    }
+                }
+            } else if (candles.size == 1) {
+                // Single data point - draw a dot
+                val x = chartRect.centerX()
+                val y = chartRect.centerY()
+                canvas.drawCircle(x, y, 5f, linePaint)
+            }
+
+            Log.d(TAG, "render: chart rendered successfully, returning bitmap")
+            return bitmap
+        } catch (e: Exception) {
+            Log.e(TAG, "render: fatal error during chart rendering", e)
+            return null
+        }
     }
 }

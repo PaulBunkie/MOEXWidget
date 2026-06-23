@@ -3,10 +3,12 @@ package com.moex.widget.data
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Date
 import java.util.concurrent.TimeUnit
 
 /**
@@ -29,15 +31,23 @@ class YahooProvider(
     private val connectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
+    companion object {
+        private const val TAG = "YahooProvider"
+    }
+
     override fun getDisplayName(): String = ticker
 
-    override fun fetch24hCandles(): Result<List<Candle>> {
+    override fun fetch24hCandles(days: Int): Result<List<Candle>> {
+        Log.d(TAG, "fetch24hCandles: ticker=$ticker, days=$days")
         if (!isNetworkAvailable()) {
+            Log.w(TAG, "No internet connection for fetch24hCandles")
             return Result.failure(Exception("No internet connection"))
         }
 
         return try {
-            val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker?interval=1h&range=1d"
+            val range = if (days <= 1) "1d" else "5d"
+            val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker?interval=1h&range=$range"
+            Log.d(TAG, "fetch24hCandles URL: $url")
 
             val request = Request.Builder()
                 .url(url)
@@ -45,22 +55,32 @@ class YahooProvider(
                 .header("User-Agent", "Mozilla/5.0")
                 .build()
 
+            Log.d(TAG, "fetch24hCandles: executing request for $ticker")
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return Result.failure(Exception("Empty response"))
+            val body = response.body?.string() ?: run {
+                Log.w(TAG, "fetch24hCandles: empty response body for $ticker")
+                return Result.failure(Exception("Empty response"))
+            }
 
             if (!response.isSuccessful) {
+                Log.w(TAG, "fetch24hCandles: HTTP ${response.code} for $ticker, body=${body.take(200)}")
                 return Result.failure(Exception("HTTP ${response.code}: $body"))
             }
 
+            Log.d(TAG, "fetch24hCandles: response received for $ticker, size=${body.length}")
             val candles = parseYahooResponse(body)
+            Log.d(TAG, "fetch24hCandles: parsed ${candles.size} candles for $ticker")
             Result.success(candles)
         } catch (e: Exception) {
+            Log.e(TAG, "fetch24hCandles exception for $ticker", e)
             Result.failure(e)
         }
     }
 
     override fun fetchDailyCandles(days: Int): Result<List<Candle>> {
+        Log.d(TAG, "fetchDailyCandles: ticker=$ticker, days=$days")
         if (!isNetworkAvailable()) {
+            Log.w(TAG, "No internet connection for fetchDailyCandles")
             return Result.failure(Exception("No internet connection"))
         }
 
@@ -74,6 +94,7 @@ class YahooProvider(
                 else -> "6mo"
             }
             val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker?interval=1d&range=$range"
+            Log.d(TAG, "fetchDailyCandles URL: $url, range=$range")
 
             val request = Request.Builder()
                 .url(url)
@@ -81,16 +102,24 @@ class YahooProvider(
                 .header("User-Agent", "Mozilla/5.0")
                 .build()
 
+            Log.d(TAG, "fetchDailyCandles: executing request for $ticker")
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return Result.failure(Exception("Empty response"))
+            val body = response.body?.string() ?: run {
+                Log.w(TAG, "fetchDailyCandles: empty response body for $ticker")
+                return Result.failure(Exception("Empty response"))
+            }
 
             if (!response.isSuccessful) {
+                Log.w(TAG, "fetchDailyCandles: HTTP ${response.code} for $ticker, body=${body.take(200)}")
                 return Result.failure(Exception("HTTP ${response.code}: $body"))
             }
 
+            Log.d(TAG, "fetchDailyCandles: response received for $ticker, size=${body.length}")
             val candles = parseYahooResponse(body)
+            Log.d(TAG, "fetchDailyCandles: parsed ${candles.size} candles for $ticker")
             Result.success(candles)
         } catch (e: Exception) {
+            Log.e(TAG, "fetchDailyCandles exception for $ticker", e)
             Result.failure(e)
         }
     }
@@ -122,50 +151,60 @@ class YahooProvider(
      * Note: Yahoo timestamps are in seconds (Unix epoch), we convert to milliseconds.
      */
     private fun parseYahooResponse(jsonString: String): List<Candle> {
-        val root = JSONObject(jsonString)
-        val chart = root.getJSONObject("chart")
+        try {
+            val root = JSONObject(jsonString)
+            val chart = root.getJSONObject("chart")
+            Log.d(TAG, "parseYahooResponse: chart object parsed for $ticker")
+            Log.d(TAG, "parseYahooResponse: raw json first 500 chars=${jsonString.take(500)}")
 
-        // Check for error conditions
-        if (chart.has("error") && !chart.isNull("error")) {
-            val error = chart.getJSONObject("error")
-            val description = error.optString("description", "Unknown Yahoo error")
-            throw Exception("Yahoo API error: $description")
-        }
+            // Check for error conditions
+            if (chart.has("error") && !chart.isNull("error")) {
+                val error = chart.getJSONObject("error")
+                val description = error.optString("description", "Unknown Yahoo error")
+                Log.e(TAG, "parseYahooResponse: Yahoo API error for $ticker: $description")
+                throw Exception("Yahoo API error: $description")
+            }
 
-        val result = chart.getJSONArray("result")
-        if (result.length() == 0) {
-            throw Exception("No data returned from Yahoo for $ticker")
-        }
+            val result = chart.getJSONArray("result")
+            if (result.length() == 0) {
+                Log.e(TAG, "parseYahooResponse: No data returned from Yahoo for $ticker")
+                throw Exception("No data returned from Yahoo for $ticker")
+            }
 
-        val firstResult = result.getJSONObject(0)
-        val timestamps: JSONArray = firstResult.getJSONArray("timestamp")
+            val firstResult = result.getJSONObject(0)
+            val timestamps: JSONArray = firstResult.getJSONArray("timestamp")
+            Log.d(TAG, "parseYahooResponse: timestamps count=${timestamps.length()} for $ticker")
 
-        val indicators = firstResult.getJSONObject("indicators")
-        val quote = indicators.getJSONArray("quote")
-        val quoteData = quote.getJSONObject(0)
+            val indicators = firstResult.getJSONObject("indicators")
+            val quote = indicators.getJSONArray("quote")
+            val quoteData = quote.getJSONObject(0)
 
-        val opens = quoteData.getJSONArray("open")
-        val highs = quoteData.getJSONArray("high")
-        val lows = quoteData.getJSONArray("low")
-        val closes = quoteData.getJSONArray("close")
+            val opens = quoteData.getJSONArray("open")
+            val highs = quoteData.getJSONArray("high")
+            val lows = quoteData.getJSONArray("low")
+            val closes = quoteData.getJSONArray("close")
 
-        val candles = mutableListOf<Candle>()
-        val length = minOf(
-            timestamps.length(),
-            opens.length(),
-            highs.length(),
-            lows.length(),
-            closes.length()
-        )
+            Log.d(TAG, "parseYahooResponse: opens=${opens.length()}, highs=${highs.length()}, lows=${lows.length()}, closes=${closes.length()} for $ticker")
 
-        for (i in 0 until length) {
-            try {
-                // Skip null entries (Yahoo may return null for some values)
-                if (timestamps.isNull(i) || opens.isNull(i) ||
-                    highs.isNull(i) || lows.isNull(i) || closes.isNull(i)
-                ) {
-                    continue
-                }
+            val candles = mutableListOf<Candle>()
+            val length = minOf(
+                timestamps.length(),
+                opens.length(),
+                highs.length(),
+                lows.length(),
+                closes.length()
+            )
+            var skippedEntries = 0
+
+            for (i in 0 until length) {
+                try {
+                    // Skip null entries (Yahoo may return null for some values)
+                    if (timestamps.isNull(i) || opens.isNull(i) ||
+                        highs.isNull(i) || lows.isNull(i) || closes.isNull(i)
+                    ) {
+                        skippedEntries++
+                        continue
+                    }
 
                 val timeSec = timestamps.getLong(i)
                 val open = opens.getDouble(i)
@@ -173,15 +212,30 @@ class YahooProvider(
                 val low = lows.getDouble(i)
                 val close = closes.getDouble(i)
 
-                // Convert seconds to milliseconds
-                candles.add(Candle(timeSec * 1000L, open, high, low, close))
-            } catch (e: Exception) {
-                // Skip malformed entries
-                continue
+                val timeMs = timeSec * 1000L
+                if (i < 3) {
+                    Log.d(TAG, "parseYahooResponse: timestamp[$i] raw=$timeSec, ms=$timeMs, date=${Date(timeMs)}")
+                }
+                candles.add(Candle(timeMs, open, high, low, close))
+                } catch (e: Exception) {
+                    skippedEntries++
+                    if (skippedEntries <= 3) {
+                        Log.w(TAG, "parseYahooResponse: skipped entry $i for $ticker: ${e.message}")
+                    }
+                }
             }
-        }
 
-        return candles.sortedBy { it.time }
+            if (skippedEntries > 0) {
+                Log.w(TAG, "parseYahooResponse: skipped $skippedEntries null/malformed entries for $ticker")
+            }
+
+            val sorted = candles.sortedBy { it.time }
+            Log.d(TAG, "parseYahooResponse: returning ${sorted.size} valid candles for $ticker")
+            return sorted
+        } catch (e: Exception) {
+            Log.e(TAG, "parseYahooResponse: fatal error for $ticker", e)
+            return emptyList()
+        }
     }
 
     private fun isNetworkAvailable(): Boolean {
