@@ -130,7 +130,7 @@ class WidgetUpdateWorker(
         val displayName = provider.getDisplayName()
         Log.d(TAG, "updateSingleWidget: displayName=$displayName")
 
-        // 4. Fetch fresh data (skip on period toggle — only re-render from DB)
+        // 4. Fetch fresh data (skip on period toggle — data already in DB)
         var lastHourlyClose: Double? = null
 
         if (!isPeriodToggle) {
@@ -157,9 +157,6 @@ class WidgetUpdateWorker(
                         appWidgetId = appWidgetId
                     )
                 }
-                // Clear old hourly data for this widget before inserting fresh
-                val deletedHourly = dao.deleteCandlesForWidgetByPeriod(instrumentKey, appWidgetId, PERIOD_HOURLY)
-                Log.d(TAG, "updateSingleWidget: deleted $deletedHourly old hourly candles")
                 dao.insertCandles(hourlyEntities)
                 Log.d(TAG, "updateSingleWidget: saved ${hourlyEntities.size} hourly candles for $instrumentKey widget $appWidgetId")
             } else {
@@ -184,9 +181,6 @@ class WidgetUpdateWorker(
                         appWidgetId = appWidgetId
                     )
                 }
-                // Clear old daily data for this widget before inserting fresh
-                val deletedDaily = dao.deleteCandlesForWidgetByPeriod(instrumentKey, appWidgetId, PERIOD_DAILY)
-                Log.d(TAG, "updateSingleWidget: deleted $deletedDaily old daily candles")
                 dao.insertCandles(dailyEntities)
                 Log.d(TAG, "updateSingleWidget: saved ${dailyEntities.size} daily candles for $instrumentKey widget $appWidgetId")
             } else {
@@ -211,8 +205,15 @@ class WidgetUpdateWorker(
 
         Log.d(TAG, "updateSingleWidget: candle closes: ${dbCandles.map { it.close }.take(5)}...")
 
+        // For hourly, render only last 24h (DB keeps all data)
+        val renderEntities = if (period == PERIOD_HOURLY) {
+            val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+            dbCandles.filter { it.time >= cutoff }
+        } else dbCandles
+        Log.d(TAG, "updateSingleWidget: rendering ${renderEntities.size} of ${dbCandles.size} candles (period=$period)")
+
         // Convert entities to Candle for rendering
-        val candlesForRender = dbCandles.map { entity ->
+        val candlesForRender = renderEntities.map { entity ->
             Candle(entity.time, entity.open, entity.high, entity.low, entity.close)
         }
 

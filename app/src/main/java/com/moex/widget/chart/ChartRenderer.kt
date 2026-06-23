@@ -69,7 +69,7 @@ class ChartRenderer(
 
     private val decimalFormat = DecimalFormat("#,##0.00")
     private val timeFormat = SimpleDateFormat(timeLabelFormat, Locale.US).apply {
-        timeZone = TimeZone.getTimeZone("Europe/Moscow")
+        timeZone = TimeZone.getDefault()
     }
 
     /**
