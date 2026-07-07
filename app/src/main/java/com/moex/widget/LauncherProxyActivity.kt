@@ -1,11 +1,11 @@
 package com.moex.widget
 
-import android.app.Activity
+import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 
-class LauncherProxyActivity : Activity() {
+class LauncherProxyActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        finish()
+        setContentView(R.layout.activity_main)
     }
 }

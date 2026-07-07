@@ -96,8 +96,8 @@ class MOEXWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        const val ACTION_MANUAL_REFRESH = "com.moex.widget.ACTION_MANUAL_REFRESH"
-        const val ACTION_TOGGLE_PERIOD = "com.moex.widget.ACTION_TOGGLE_PERIOD"
+        const val ACTION_MANUAL_REFRESH = "com.stock.crypto.widget.ACTION_MANUAL_REFRESH"
+        const val ACTION_TOGGLE_PERIOD = "com.stock.crypto.widget.ACTION_TOGGLE_PERIOD"
         const val EXTRA_TICKER = "ticker"
         const val EXTRA_APPWIDGET_IDS = "appWidgetIds"
 

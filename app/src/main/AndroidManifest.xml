@@ -22,8 +22,8 @@
             android:label="@string/widget_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.moex.widget.ACTION_MANUAL_REFRESH" />
-                <action android:name="com.moex.widget.ACTION_TOGGLE_PERIOD" />
+                <action android:name="com.stock.crypto.widget.ACTION_MANUAL_REFRESH" />
+                <action android:name="com.stock.crypto.widget.ACTION_TOGGLE_PERIOD" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -36,8 +36,8 @@
             android:label="@string/widget_name_small">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.moex.widget.ACTION_MANUAL_REFRESH" />
-                <action android:name="com.moex.widget.ACTION_TOGGLE_PERIOD" />
+                <action android:name="com.stock.crypto.widget.ACTION_MANUAL_REFRESH" />
+                <action android:name="com.stock.crypto.widget.ACTION_TOGGLE_PERIOD" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -47,7 +47,7 @@
         <activity
             android:name=".LauncherProxyActivity"
             android:exported="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            android:theme="@style/Theme.MOEXWidget">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

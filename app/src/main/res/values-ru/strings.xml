@@ -17,4 +17,5 @@
     <string name="select_instrument">Выберите инструмент:</string>
     <string name="search_instrument">Поиск инструмента...</string>
     <string name="add_widget">Добавить виджет</string>
+    <string name="instructions">Это приложение-виджет. Чтобы использовать его, зажмите пустую область на главном экране и добавьте виджет \"Stock &amp; Crypto Chart\".</string>
 </resources>

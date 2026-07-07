@@ -17,4 +17,5 @@
     <string name="select_instrument">Select instrument:</string>
     <string name="search_instrument">Search instrument...</string>
     <string name="add_widget">Add Widget</string>
+    <string name="instructions">This is a widget app. To use it, long-press on your home screen and add the \"Stock &amp; Crypto Chart\" widget.</string>
 </resources>
