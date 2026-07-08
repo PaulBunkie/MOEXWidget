@@ -1,3 +1,17 @@
-# Project exclude paths
-/.gradle/
-/app/build/
+# Gradle
+.gradle/
+build/
+app/build/
+
+# Android Studio / IntelliJ IDEA
+.idea/
+*.iml
+local.properties
+.DS_Store
+
+# Build artifacts
+*.aab
+*.apk
+
+# Capture logs
+captures/

@@ -7,6 +7,7 @@
     <string name="loading">Загрузка...</string>
     <string name="no_data">Нет данных</string>
     <string name="error_no_internet">Нет интернет-соединения</string>
+    <string name="error_data_unavailable_country">Данные недоступны в вашей стране</string>
 
     <!-- Widget config activity -->
     <string name="widget_config_title">Настройка виджета</string>
@@ -16,6 +17,9 @@
     <string name="radio_crypto">Crypto</string>
     <string name="select_instrument">Выберите инструмент:</string>
     <string name="search_instrument">Поиск инструмента...</string>
+    <string name="custom_instrument">Свой: %1$s</string>
     <string name="add_widget">Добавить виджет</string>
+    <string name="open_investing">Открыть в Investing.com</string>
+    <string name="widget_settings">Настройки виджета</string>
     <string name="instructions">Это приложение-виджет. Чтобы использовать его, зажмите пустую область на главном экране и добавьте виджет \"Stock &amp; Crypto Chart\".</string>
 </resources>

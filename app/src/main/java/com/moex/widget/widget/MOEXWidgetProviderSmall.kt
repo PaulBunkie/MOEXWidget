@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.util.Log
 import com.moex.widget.R
+import com.moex.widget.data.Instrument
 import com.moex.widget.worker.WidgetUpdateWorker
 
 /**
@@ -49,13 +50,21 @@ class MOEXWidgetProviderSmall : AppWidgetProvider() {
                 val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
                 if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
                     triggerRefresh(context, appWidgetId)
-                } else {
-                    Log.w(TAG, "Manual refresh: invalid widget ID, refreshing all (small)")
-                    val appWidgetManager = AppWidgetManager.getInstance(context)
-                    val thisWidget = ComponentName(context, MOEXWidgetProviderSmall::class.java)
-                    val appWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
-                    for (id in appWidgetIds) {
-                        triggerRefresh(context, id)
+                }
+            }
+            MOEXWidgetProvider.ACTION_SHOW_OVERLAY -> {
+                val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+                if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                    val instrumentKey = getInstrumentForWidget(context, appWidgetId)
+                    try {
+                        val instrument = Instrument.fromKey(instrumentKey)
+                        val url = instrument.getInvestingUrl(context, appWidgetId)
+                        val browserIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
+                            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        context.startActivity(browserIntent)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to open Investing.com (small)", e)
                     }
                 }
             }
@@ -117,8 +126,20 @@ class MOEXWidgetProviderSmall : AppWidgetProvider() {
 
             val refreshPendingIntent = android.app.PendingIntent.getBroadcast(
                 context,
-                appWidgetId * 2,
+                appWidgetId * 3,
                 refreshIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val showOverlayIntent = android.content.Intent(context, MOEXWidgetProviderSmall::class.java).apply {
+                action = MOEXWidgetProvider.ACTION_SHOW_OVERLAY
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            }
+
+            val showOverlayPendingIntent = android.app.PendingIntent.getBroadcast(
+                context,
+                appWidgetId * 3 + 1,
+                showOverlayIntent,
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
             )
 
@@ -129,13 +150,13 @@ class MOEXWidgetProviderSmall : AppWidgetProvider() {
 
             val togglePeriodPendingIntent = android.app.PendingIntent.getBroadcast(
                 context,
-                appWidgetId * 2 + 1,
+                appWidgetId * 3 + 2,
                 togglePeriodIntent,
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
             )
 
             remoteViews.setOnClickPendingIntent(R.id.chart_image, togglePeriodPendingIntent)
-            remoteViews.setOnClickPendingIntent(R.id.ticker_text, refreshPendingIntent)
+            remoteViews.setOnClickPendingIntent(R.id.ticker_text, showOverlayPendingIntent)
             remoteViews.setOnClickPendingIntent(R.id.price_text, refreshPendingIntent)
         }
     }

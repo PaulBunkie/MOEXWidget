@@ -47,7 +47,7 @@
         <activity
             android:name=".LauncherProxyActivity"
             android:exported="true"
-            android:theme="@style/Theme.MOEXWidget">
+            android:theme="@android:style/Theme.NoDisplay">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -63,6 +63,12 @@
                 <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".widget.InstrumentSearchActivity"
+            android:exported="false"
+            android:label="@string/search_instrument"
+            android:theme="@style/Theme.MOEXWidget" />
 
         <service
             android:name=".worker.WidgetUpdateService"

@@ -19,7 +19,9 @@
             android:text="SBER"
             android:textColor="#1A1A1A"
             android:textSize="21sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:background="?android:attr/selectableItemBackground"
+            android:paddingEnd="16dp" />
 
         <TextView
             android:id="@+id/price_text"
@@ -30,7 +32,8 @@
             android:text="---"
             android:textColor="#1A1A1A"
             android:textSize="21sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:background="?android:attr/selectableItemBackground" />
 
     </LinearLayout>
 

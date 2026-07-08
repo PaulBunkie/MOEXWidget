@@ -27,6 +27,9 @@ interface CandleDao {
     @Query("DELETE FROM candles WHERE instrumentKey = :instrumentKey AND appWidgetId = :appWidgetId AND period = :period")
     suspend fun deleteCandlesForWidgetByPeriod(instrumentKey: String, appWidgetId: Int, period: String)
 
+    @Query("DELETE FROM candles WHERE appWidgetId = :appWidgetId")
+    suspend fun deleteCandlesForWidgetId(appWidgetId: Int)
+
     /**
      * Inserts a batch of candles. Existing rows with same primary key are replaced.
      */

@@ -10,9 +10,13 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.moex.widget.R
+import com.moex.widget.data.AppDatabase
 import com.moex.widget.data.Instrument
 import com.moex.widget.worker.WidgetUpdateWorker
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Configuration activity for the MOEX widget.
@@ -22,6 +26,7 @@ class WidgetConfigActivity : AppCompatActivity() {
 
     private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
     private var selectedInstrument: Instrument? = null
+    private var currentMarket: String = "YAHOO"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,9 +68,18 @@ class WidgetConfigActivity : AppCompatActivity() {
             instrumentContainer.removeAllViews()
 
             when (checkedId) {
-                R.id.radioYahoo -> showYahooList(instrumentContainer)
-                R.id.radioMoex -> showStockList(instrumentContainer)
-                R.id.radioCrypto -> showCryptoList(instrumentContainer)
+                R.id.radioYahoo -> {
+                    currentMarket = "YAHOO"
+                    showYahooList(instrumentContainer)
+                }
+                R.id.radioMoex -> {
+                    currentMarket = "STOCK"
+                    showStockList(instrumentContainer)
+                }
+                R.id.radioCrypto -> {
+                    currentMarket = "CRYPTO"
+                    showCryptoList(instrumentContainer)
+                }
             }
         }
 
@@ -85,6 +99,13 @@ class WidgetConfigActivity : AppCompatActivity() {
 
                 // Directly enqueue the worker to refresh this widget
                 Log.d(TAG, "Enqueuing worker refresh for widget $appWidgetId with ${instrument.toKey()}")
+                
+                // Isolation: Clear old data for this widget
+                lifecycleScope.launch(Dispatchers.IO) {
+                    val db = AppDatabase.getInstance(this@WidgetConfigActivity)
+                    db.candleDao().deleteCandlesForWidgetId(appWidgetId)
+                }
+
                 WidgetUpdateWorker.enqueueRefresh(
                     this,
                     instrument.toKey(),
@@ -171,8 +192,7 @@ class WidgetConfigActivity : AppCompatActivity() {
     }
 
     /**
-     * Adds a disabled placeholder for the upcoming "Search instrument" feature.
-     * This is a visual hint for future premium functionality.
+     * Adds a RadioButton for the "Search instrument" feature.
      */
     private fun addSearchPlaceholder(container: LinearLayout) {
         val searchButton = RadioButton(this).apply {
@@ -180,10 +200,34 @@ class WidgetConfigActivity : AppCompatActivity() {
             id = android.view.View.generateViewId()
             setPadding(16, 8, 16, 8)
             textSize = 16f
-            isEnabled = false
-            alpha = 0.4f
+            setOnClickListener {
+                val intent = Intent(this@WidgetConfigActivity, InstrumentSearchActivity::class.java).apply {
+                    putExtra("MARKET_TYPE", currentMarket)
+                }
+                startActivityForResult(intent, REQUEST_SEARCH)
+            }
         }
         container.addView(searchButton)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_SEARCH && resultCode == RESULT_OK) {
+            val key = data?.getStringExtra("SELECTED_INSTRUMENT_KEY")
+            val slug = data?.getStringExtra("SELECTED_SLUG")
+            if (key != null) {
+                selectedInstrument = Instrument.fromKey(key)
+                
+                // Save the slug immediately
+                if (slug != null) {
+                    val prefs = getSharedPreferences("widget_prefs", MODE_PRIVATE)
+                    prefs.edit().putString("investing_slug_$appWidgetId", slug).apply()
+                    Log.d(TAG, "Saved investing slug for $appWidgetId: $slug")
+                }
+
+                findViewById<Button>(R.id.confirmButton).performClick()
+            }
+        }
     }
 
     private fun saveInstrument(instrument: Instrument) {
@@ -215,5 +259,6 @@ class WidgetConfigActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "WidgetConfig"
+        private const val REQUEST_SEARCH = 100
     }
 }

@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -19,6 +21,8 @@ import java.util.concurrent.TimeUnit
  * Implements PriceProvider interface for the widget data pipeline.
  */
 class MoexApiClient(context: Context, private val ticker: String = "SBER") : PriceProvider {
+
+    private val prefs = context.getSharedPreferences("moex_metadata", Context.MODE_PRIVATE)
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -152,7 +156,8 @@ class MoexApiClient(context: Context, private val ticker: String = "SBER") : Pri
 
     /**
      * Builds MOEX ISS API URL for candle data.
-     * Format: https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/{ticker}/candles.json
+     * Uses metadata (engine/market/board) found via search.
+     * Defaults to stock/shares/TQBR if not found.
      */
     private fun buildCandlesUrl(
         ticker: String,
@@ -163,10 +168,79 @@ class MoexApiClient(context: Context, private val ticker: String = "SBER") : Pri
         val fromStr = dateFormat.format(from)
         val tillStr = dateFormat.format(till)
 
-        val url = "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/" +
+        val engine = prefs.getString("engine_$ticker", "stock")
+        val market = prefs.getString("market_$ticker", "shares")
+        val board = prefs.getString("board_$ticker", "TQBR")
+
+        // Specialized boards for some markets
+        val boardPart = if (board != null && board.isNotEmpty()) "/boards/$board" else ""
+
+        val url = "https://iss.moex.com/iss/engines/$engine/markets/$market${boardPart}/securities/" +
                 "$ticker/candles.json?from=$fromStr&till=$tillStr&interval=$interval"
-        Log.d(TAG, "buildCandlesUrl: $url")
+        Log.d(TAG, "buildCandlesUrl: ticker=$ticker, engine=$engine, market=$market, board=$board, url=$url")
         return url
+    }
+
+    /**
+     * Searches for a security to find its engine, market and board.
+     * This allows supporting futures (IMOEXF), indices, and different boards.
+     */
+    suspend fun searchAndSaveMetadata(ticker: String): Boolean {
+        // Check if we already have metadata
+        val existingEngine = prefs.getString("engine_$ticker", null)
+        if (existingEngine != null) {
+            return true
+        }
+
+        return withContext(Dispatchers.IO) {
+            try {
+                // Using: https://iss.moex.com/iss/securities/{ticker}.json
+                val detailUrl = "https://iss.moex.com/iss/securities/$ticker.json?iss.only=boards&boards.only=boardid,market,engine,is_primary"
+                val detailRequest = Request.Builder().url(detailUrl).build()
+                val detailResponse = client.newCall(detailRequest).execute()
+                val detailBody = detailResponse.body?.string() ?: return@withContext false
+
+                val detailJson = org.json.JSONObject(detailBody)
+                val boards = detailJson.getJSONObject("boards")
+                val boardsData = boards.getJSONArray("data")
+                val boardsCols = boards.getJSONArray("columns")
+
+                var bIdIdx = -1
+                var mktIdx = -1
+                var engIdx = -1
+                var primaryIdx = -1
+
+                for (i in 0 until boardsCols.length()) {
+                    when (boardsCols.getString(i).lowercase()) {
+                        "boardid" -> bIdIdx = i
+                        "market" -> mktIdx = i
+                        "engine" -> engIdx = i
+                        "is_primary" -> primaryIdx = i
+                    }
+                }
+
+                for (i in 0 until boardsData.length()) {
+                    val row = boardsData.getJSONArray(i)
+                    val isPrimary = row.optInt(primaryIdx, 0) == 1
+                    if (isPrimary || boardsData.length() == 1) {
+                        val board = row.getString(bIdIdx)
+                        val market = row.getString(mktIdx)
+                        val engine = row.getString(engIdx)
+
+                        prefs.edit()
+                            .putString("engine_$ticker", engine)
+                            .putString("market_$ticker", market)
+                            .putString("board_$ticker", board)
+                            .apply()
+                        return@withContext true
+                    }
+                }
+                false
+            } catch (e: Exception) {
+                Log.e(TAG, "Error searching metadata for $ticker", e)
+                false
+            }
+        }
     }
 
     /**

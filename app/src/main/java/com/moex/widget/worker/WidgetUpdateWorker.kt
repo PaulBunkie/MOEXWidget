@@ -216,7 +216,8 @@ class WidgetUpdateWorker(
         }
         if (dbCandles.isEmpty()) {
             Log.w(TAG, "No candles in DB for $instrumentKey period $period, showing error")
-            showErrorForWidget(context, appWidgetId, isSmallWidget, displayName)
+            val errorMsg = context.getString(R.string.error_data_unavailable_country)
+            showErrorForWidget(context, appWidgetId, isSmallWidget, displayName, errorMsg)
             return
         }
 
@@ -260,24 +261,29 @@ class WidgetUpdateWorker(
         val labelTextSize = if (isTablet) 29f else 58f
         val commonHeight = (200 * displayMetrics.density).toInt()
         val useDailyFormat = period == PERIOD_DAILY || period == PERIOD_WEEKLY
-        val bitmap: Bitmap? = if (isSmallWidget) {
-            val size = commonHeight
-            Log.d(TAG, "updateSingleWidget: rendering small widget, size=$size")
-            val renderer = if (useDailyFormat) {
-                ChartRenderer(size, size, true, labelTextSize, timeLabelStep = 2, timeLabelOffset = 1, timeLabelFormat = "dd.MM")
+        
+        val bitmap: Bitmap? = if (candlesForRender.isNotEmpty()) {
+            if (isSmallWidget) {
+                val size = commonHeight
+                Log.d(TAG, "updateSingleWidget: rendering small widget, size=$size")
+                val renderer = if (useDailyFormat) {
+                    ChartRenderer(size, size, true, labelTextSize, timeLabelStep = 2, timeLabelOffset = 1, timeLabelFormat = "dd.MM")
+                } else {
+                    ChartRenderer(size, size, true, labelTextSize, timeLabelStep = 2, timeLabelOffset = 1, timeLabelFormat = "HH:mm")
+                }
+                renderer.render(candlesForRender)
             } else {
-                ChartRenderer(size, size, true, labelTextSize, timeLabelStep = 2, timeLabelOffset = 1, timeLabelFormat = "HH:mm")
+                val w = (350 * displayMetrics.density).toInt()
+                Log.d(TAG, "updateSingleWidget: rendering large widget, w=$w, h=$commonHeight")
+                val renderer = if (useDailyFormat) {
+                    ChartRenderer(w, commonHeight, true, labelTextSize, timeLabelStep = 1, timeLabelOffset = 0, timeLabelFormat = "dd.MM")
+                } else {
+                    ChartRenderer(w, commonHeight, true, labelTextSize, timeLabelFormat = "HH:mm")
+                }
+                renderer.render(candlesForRender)
             }
-            renderer.render(candlesForRender)
         } else {
-            val w = (350 * displayMetrics.density).toInt()
-            Log.d(TAG, "updateSingleWidget: rendering large widget, w=$w, h=$commonHeight")
-            val renderer = if (useDailyFormat) {
-                ChartRenderer(w, commonHeight, true, labelTextSize, timeLabelStep = 1, timeLabelOffset = 0, timeLabelFormat = "dd.MM")
-            } else {
-                ChartRenderer(w, commonHeight, true, labelTextSize, timeLabelFormat = "HH:mm")
-            }
-            renderer.render(candlesForRender)
+            null
         }
 
         if (bitmap == null) {
@@ -295,10 +301,11 @@ class WidgetUpdateWorker(
         context: Context,
         appWidgetId: Int,
         isSmallWidget: Boolean,
-        displayName: String = "N/A"
+        displayName: String = "N/A",
+        errorMsg: String = "N/A"
     ) {
-        Log.d(TAG, "showErrorForWidget: id=$appWidgetId, name=$displayName")
-        updateWidgetWithError(displayName, context, appWidgetId, isSmallWidget)
+        Log.d(TAG, "showErrorForWidget: id=$appWidgetId, name=$displayName, error=$errorMsg")
+        updateWidgetWithError(displayName, context, appWidgetId, isSmallWidget, errorMsg)
     }
 
     companion object {
@@ -406,7 +413,12 @@ class WidgetUpdateWorker(
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
             remoteViews.setTextViewText(R.id.price_text, String.format("%.2f", priceHeader))
 
-            bitmap?.let { remoteViews.setImageViewBitmap(R.id.chart_image, it) }
+            if (bitmap != null) {
+                remoteViews.setImageViewBitmap(R.id.chart_image, bitmap)
+                remoteViews.setViewVisibility(R.id.chart_image, android.view.View.VISIBLE)
+            } else {
+                remoteViews.setViewVisibility(R.id.chart_image, android.view.View.GONE)
+            }
 
             // Set up click handlers (different zones for different actions)
             if (isSmallWidget) {
@@ -423,9 +435,10 @@ class WidgetUpdateWorker(
             displayName: String,
             context: Context,
             appWidgetId: Int,
-            isSmallWidget: Boolean
+            isSmallWidget: Boolean,
+            errorMsg: String = "N/A"
         ) {
-            Log.d(TAG, "updateWidgetWithError: id=$appWidgetId, name=$displayName")
+            Log.d(TAG, "updateWidgetWithError: id=$appWidgetId, name=$displayName, error=$errorMsg")
             val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
             val remoteViews = RemoteViews(context.packageName, layoutRes)
 
@@ -434,7 +447,8 @@ class WidgetUpdateWorker(
             remoteViews.setTextViewTextSize(R.id.ticker_text, TypedValue.COMPLEX_UNIT_SP, titleSizeSp)
             remoteViews.setTextViewTextSize(R.id.price_text, TypedValue.COMPLEX_UNIT_SP, titleSizeSp)
             remoteViews.setTextViewText(R.id.ticker_text, displayName)
-            remoteViews.setTextViewText(R.id.price_text, "N/A")
+            remoteViews.setTextViewText(R.id.price_text, errorMsg)
+            remoteViews.setViewVisibility(R.id.chart_image, android.view.View.GONE)
 
             // Always set up click handlers so widget remains interactive
             if (isSmallWidget) {

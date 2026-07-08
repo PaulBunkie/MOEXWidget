@@ -44,6 +44,27 @@ sealed class Instrument {
         is YahooStock -> ticker
     }}"
 
+    /**
+     * Returns the Investing.com URL for this instrument.
+     * Uses a pre-stored slug for 100% accuracy, or falls back to search.
+     */
+    fun getInvestingUrl(context: android.content.Context, appWidgetId: Int): String {
+        val prefs = context.getSharedPreferences("widget_prefs", android.content.Context.MODE_PRIVATE)
+        val slug = prefs.getString("investing_slug_$appWidgetId", null)
+        
+        if (slug != null) {
+            return if (slug.startsWith("http")) slug else "https://www.investing.com$slug"
+        }
+
+        // Fallback for old widgets (simple search)
+        val q = when (this) {
+            is Stock -> ticker
+            is Crypto -> symbol.replace("USDT", "")
+            is YahooStock -> ticker
+        }
+        return "https://www.investing.com/search/?q=${q.lowercase()}"
+    }
+
     companion object {
         /**
          * Creates an Instrument from a stored key string.
@@ -64,7 +85,7 @@ sealed class Instrument {
          * List of popular MOEX stocks for quick selection (sorted alphabetically).
          */
         val POPULAR_STOCKS = listOf(
-            "AFLT", "ALRS", "GAZP", "GMKN", "HYDR",
+            "IMOEXF", "AFLT", "ALRS", "GAZP", "GMKN", "HYDR",
             "IRAO", "LKOH", "MGNT", "MOEX", "MTSS",
             "PHOR", "PLZL", "ROSN", "RUAL", "SBER",
             "SNGS", "TATN", "TCSG", "VTBR", "YNDX"
@@ -83,7 +104,7 @@ sealed class Instrument {
          * List of popular US stocks (Yahoo Finance) for quick selection (sorted alphabetically).
          */
         val POPULAR_YAHOO_STOCKS = listOf(
-            "AAPL", "AMD", "AMZN", "BA", "CRM",
+            "^DJI", "AAPL", "AMD", "AMZN", "BA", "CRM",
             "DIS", "GOOGL", "INTC", "JNJ", "JPM",
             "KO", "MA", "META", "MSFT", "NFLX",
             "NVDA", "PYPL", "TSLA", "V", "WMT"

@@ -7,6 +7,7 @@
     <string name="loading">Loading...</string>
     <string name="no_data">No data</string>
     <string name="error_no_internet">No internet connection</string>
+    <string name="error_data_unavailable_country">Data unavailable in your country</string>
 
     <!-- Widget config activity -->
     <string name="widget_config_title">Widget Setup</string>
@@ -16,6 +17,9 @@
     <string name="radio_crypto">Crypto</string>
     <string name="select_instrument">Select instrument:</string>
     <string name="search_instrument">Search instrument...</string>
+    <string name="custom_instrument">Custom: %1$s</string>
     <string name="add_widget">Add Widget</string>
+    <string name="open_investing">Open in Investing.com</string>
+    <string name="widget_settings">Widget Settings</string>
     <string name="instructions">This is a widget app. To use it, long-press on your home screen and add the \"Stock &amp; Crypto Chart\" widget.</string>
 </resources>
