@@ -58,29 +58,18 @@ class MOEXWidgetProvider : AppWidgetProvider() {
                     triggerRefresh(context, appWidgetId)
                 }
             }
-            ACTION_SHOW_OVERLAY -> {
+            ACTION_PERIOD_NEXT -> {
+                Log.d(TAG, "Period NEXT triggered")
                 val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
                 if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-                    val instrumentKey = getInstrumentForWidget(context, appWidgetId)
-                    try {
-                        val instrument = Instrument.fromKey(instrumentKey)
-                        val url = instrument.getInvestingUrl(context, appWidgetId)
-                        val browserIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        }
-                        context.startActivity(browserIntent)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to open Investing.com", e)
-                    }
+                    WidgetUpdateWorker.enqueuePeriodChange(context, appWidgetId, 1)
                 }
             }
-            ACTION_TOGGLE_PERIOD -> {
-                Log.d(TAG, "Period toggle triggered by tap on chart!")
+            ACTION_PERIOD_PREV -> {
+                Log.d(TAG, "Period PREV triggered")
                 val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
                 if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-                    WidgetUpdateWorker.enqueuePeriodToggle(context, intArrayOf(appWidgetId))
-                } else {
-                    Log.w(TAG, "Period toggle: invalid widget ID")
+                    WidgetUpdateWorker.enqueuePeriodChange(context, appWidgetId, -1)
                 }
             }
             else -> {
@@ -104,6 +93,8 @@ class MOEXWidgetProvider : AppWidgetProvider() {
 
     companion object {
         const val ACTION_MANUAL_REFRESH = "com.stock.crypto.widget.ACTION_MANUAL_REFRESH"
+        const val ACTION_PERIOD_NEXT = "com.stock.crypto.widget.ACTION_PERIOD_NEXT"
+        const val ACTION_PERIOD_PREV = "com.stock.crypto.widget.ACTION_PERIOD_PREV"
         const val ACTION_TOGGLE_PERIOD = "com.stock.crypto.widget.ACTION_TOGGLE_PERIOD"
         const val ACTION_SHOW_OVERLAY = "com.stock.crypto.widget.ACTION_SHOW_OVERLAY"
         const val EXTRA_TICKER = "ticker"
@@ -131,7 +122,8 @@ class MOEXWidgetProvider : AppWidgetProvider() {
         fun updateWidgetClickHandler(
             context: Context,
             remoteViews: RemoteViews,
-            appWidgetId: Int
+            appWidgetId: Int,
+            investingUrl: String
         ) {
             val refreshIntent = Intent(context, MOEXWidgetProvider::class.java).apply {
                 action = ACTION_MANUAL_REFRESH
@@ -145,32 +137,36 @@ class MOEXWidgetProvider : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val showOverlayIntent = Intent(context, MOEXWidgetProvider::class.java).apply {
-                action = ACTION_SHOW_OVERLAY
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            // Direct Activity Intent to avoid background launch restrictions on real devices
+            val browserIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(investingUrl)).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
-
-            val showOverlayPendingIntent = PendingIntent.getBroadcast(
+            val browserPendingIntent = PendingIntent.getActivity(
                 context,
                 appWidgetId * 3 + 1,
-                showOverlayIntent,
+                browserIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val togglePeriodIntent = Intent(context, MOEXWidgetProvider::class.java).apply {
-                action = ACTION_TOGGLE_PERIOD
+            val periodNextIntent = Intent(context, MOEXWidgetProvider::class.java).apply {
+                action = ACTION_PERIOD_NEXT
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
             }
-
-            val togglePeriodPendingIntent = PendingIntent.getBroadcast(
-                context,
-                appWidgetId * 3 + 2,
-                togglePeriodIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            val periodNextPendingIntent = PendingIntent.getBroadcast(
+                context, appWidgetId * 4 + 2, periodNextIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            remoteViews.setOnClickPendingIntent(R.id.chart_image, togglePeriodPendingIntent)
-            remoteViews.setOnClickPendingIntent(R.id.ticker_text, showOverlayPendingIntent)
+            val periodPrevIntent = Intent(context, MOEXWidgetProvider::class.java).apply {
+                action = ACTION_PERIOD_PREV
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            }
+            val periodPrevPendingIntent = PendingIntent.getBroadcast(
+                context, appWidgetId * 4 + 3, periodPrevIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            remoteViews.setOnClickPendingIntent(R.id.chart_click_left, periodPrevPendingIntent)
+            remoteViews.setOnClickPendingIntent(R.id.chart_click_right, periodNextPendingIntent)
+            remoteViews.setOnClickPendingIntent(R.id.ticker_text, browserPendingIntent)
             remoteViews.setOnClickPendingIntent(R.id.price_text, refreshPendingIntent)
         }
     }

@@ -62,14 +62,15 @@ class WidgetUpdateWorker(
         }
 
         val isPeriodToggle = inputData.getBoolean(KEY_PERIOD_TOGGLE, false)
+        val direction = inputData.getInt("direction", 1)
         val isInitialLoad = inputData.getBoolean(KEY_INITIAL_LOAD, false)
-        Log.d(TAG, "doWork: isPeriodToggle=$isPeriodToggle, isInitialLoad=$isInitialLoad, total widgets=${idsToUpdate.size}")
+        Log.d(TAG, "doWork: isPeriodToggle=$isPeriodToggle, direction=$direction, isInitialLoad=$isInitialLoad, total widgets=${idsToUpdate.size}")
 
         // Each widget gets its own data fetch and bitmap render
         for (appWidgetId in idsToUpdate) {
             try {
                 Log.d(TAG, "doWork: updating widget $appWidgetId")
-                updateSingleWidget(applicationContext, appWidgetId, widgetManager, isPeriodToggle, isInitialLoad)
+                updateSingleWidget(applicationContext, appWidgetId, widgetManager, isPeriodToggle, isInitialLoad, direction)
                 Log.d(TAG, "doWork: widget $appWidgetId updated successfully")
             } catch (e: Exception) {
                 Log.e(TAG, "Error updating widget $appWidgetId", e)
@@ -90,7 +91,8 @@ class WidgetUpdateWorker(
         appWidgetId: Int,
         widgetManager: AppWidgetManager,
         isPeriodToggle: Boolean = false,
-        isInitialLoad: Boolean = false
+        isInitialLoad: Boolean = false,
+        direction: Int = 1
     ) {
         // 1. Determine widget size
         val widgetInfo = widgetManager.getAppWidgetInfo(appWidgetId)
@@ -104,7 +106,7 @@ class WidgetUpdateWorker(
         // 2. Get instrument and period for this specific widget
         val instrumentKey = getInstrumentForWidget(context, appWidgetId)
         val period = if (isPeriodToggle) {
-            togglePeriodForWidget(context, appWidgetId)
+            togglePeriodForWidget(context, appWidgetId, direction)
         } else {
             getPeriodForWidget(context, appWidgetId)
         }
@@ -134,59 +136,27 @@ class WidgetUpdateWorker(
         var lastHourlyClose: Double? = null
 
         if (!isPeriodToggle) {
-            // 4a. Fetch hourly candles (1h) — full week on initial load, last 24h normally
-            Log.d(TAG, "updateSingleWidget: fetching hourly candles for $instrumentKey, isInitialLoad=$isInitialLoad")
-            val hourlyResult = if (isInitialLoad) {
-                provider.fetch24hCandles(7)
-            } else {
-                provider.fetch24hCandles(1)
-            }
-            if (hourlyResult.isSuccess) {
-                val hourlyCandles = hourlyResult.getOrThrow()
-                lastHourlyClose = hourlyCandles.lastOrNull()?.close
-                Log.d(TAG, "updateSingleWidget: fetched ${hourlyCandles.size} hourly candles, lastClose=$lastHourlyClose")
-                val hourlyEntities = hourlyCandles.map { candle ->
-                    CandleEntity(
-                        instrumentKey = instrumentKey,
-                        time = candle.time,
-                        open = candle.open,
-                        high = candle.high,
-                        low = candle.low,
-                        close = candle.close,
-                        period = PERIOD_HOURLY,
-                        appWidgetId = appWidgetId
-                    )
-                }
-                dao.insertCandles(hourlyEntities)
-                Log.d(TAG, "updateSingleWidget: saved ${hourlyEntities.size} hourly candles for $instrumentKey widget $appWidgetId")
-            } else {
-                Log.w(TAG, "Hourly API fetch failed for $instrumentKey: ${hourlyResult.exceptionOrNull()?.message}")
-            }
-
-            // 4b. Fetch daily candles (1d) for the last 30 days
+            // 4a. Fetch fresh data (Daily for W/M and Hourly for Day view)
             Log.d(TAG, "updateSingleWidget: fetching daily candles for $instrumentKey")
-            val dailyResult = provider.fetchDailyCandles(30)
+            val dailyResult = provider.fetchDailyCandles(90)
             if (dailyResult.isSuccess) {
                 val dailyCandles = dailyResult.getOrThrow()
-                Log.d(TAG, "updateSingleWidget: fetched ${dailyCandles.size} daily candles")
                 val dailyEntities = dailyCandles.map { candle ->
-                    CandleEntity(
-                        instrumentKey = instrumentKey,
-                        time = candle.time,
-                        open = candle.open,
-                        high = candle.high,
-                        low = candle.low,
-                        close = candle.close,
-                        period = PERIOD_DAILY,
-                        appWidgetId = appWidgetId
-                    )
+                    CandleEntity(instrumentKey, candle.time, candle.open, candle.high, candle.low, candle.close, PERIOD_DAY, appWidgetId)
                 }
                 dao.insertCandles(dailyEntities)
-                Log.d(TAG, "updateSingleWidget: saved ${dailyEntities.size} daily candles for $instrumentKey widget $appWidgetId")
-            } else {
-                Log.w(TAG, "Daily API fetch failed for $instrumentKey: ${dailyResult.exceptionOrNull()?.message}")
             }
-        } else {
+
+            Log.d(TAG, "updateSingleWidget: fetching 24h/hourly candles for $instrumentKey")
+            provider.fetch24hCandles(1).onSuccess { candles ->
+                lastHourlyClose = candles.lastOrNull()?.close
+                val entities = candles.map { candle ->
+                    CandleEntity(instrumentKey, candle.time, candle.open, candle.high, candle.low, candle.close, "1h", appWidgetId)
+                }
+                dao.insertCandles(entities)
+            }
+        }
+else {
             Log.d(TAG, "updateSingleWidget: period toggle, skipping API fetch")
         }
 
@@ -206,35 +176,38 @@ class WidgetUpdateWorker(
             }
         }
 
-        // 5. Read history from DB (weekly uses daily data from DB)
-        val queryPeriod = if (period == PERIOD_WEEKLY) PERIOD_DAILY else period
+        // 5. Read history from DB
+        // If period is Day, we need HOURLY data for granularity. 
+        // For Weekly/Monthly, we use DAILY data.
+        val queryPeriod = if (period == PERIOD_DAY) "1h" else PERIOD_DAY
         Log.d(TAG, "updateSingleWidget: reading candles from DB for $instrumentKey, period=$period (query=$queryPeriod)")
         val dbCandles = dao.getCandles(instrumentKey, appWidgetId, queryPeriod)
-        Log.d(TAG, "updateSingleWidget: retrieved ${dbCandles.size} candles from DB")
-        if (dbCandles.isNotEmpty()) {
-            Log.d(TAG, "updateSingleWidget: DB first=${dbCandles.first().time} (${Date(dbCandles.first().time)}), last=${dbCandles.last().time} (${Date(dbCandles.last().time)})")
-        }
+        
         if (dbCandles.isEmpty()) {
-            Log.w(TAG, "No candles in DB for $instrumentKey period $period, showing error")
             val errorMsg = context.getString(R.string.error_data_unavailable_country)
             showErrorForWidget(context, appWidgetId, isSmallWidget, displayName, errorMsg)
             return
         }
 
-        Log.d(TAG, "updateSingleWidget: candle closes: ${dbCandles.map { it.close }.take(5)}...")
-
         // Filter data for rendering based on period
         val now = System.currentTimeMillis()
         val renderEntities = when (period) {
-            PERIOD_HOURLY -> {
-                val cutoff = now - 24L * 60 * 60 * 1000
+            PERIOD_DAY -> {
+                // Showing last 24 hours of hourly data
+                val cutoff = now - 1L * 24 * 60 * 60 * 1000
                 dbCandles.filter { it.time >= cutoff }
             }
             PERIOD_WEEKLY -> {
-                val cutoff = now - 10L * 24 * 60 * 60 * 1000
+                // Showing last 7 days of daily data
+                val cutoff = now - 7L * 24 * 60 * 60 * 1000
                 dbCandles.filter { it.time >= cutoff }
             }
-            else -> dbCandles  // daily — all 30 days
+            PERIOD_MONTHLY -> {
+                // Showing last 30 days of daily data
+                val cutoff = now - 30L * 24 * 60 * 60 * 1000
+                dbCandles.filter { it.time >= cutoff }
+            }
+            else -> dbCandles
         }
         Log.d(TAG, "updateSingleWidget: rendering ${renderEntities.size} of ${dbCandles.size} candles (period=$period)")
 
@@ -246,10 +219,11 @@ class WidgetUpdateWorker(
         // Always use the latest hourly close for the price display in the header
         // (if hourly fetch wasn't done this cycle, read it from DB)
         val latestPrice: Double
-        if (lastHourlyClose != null) {
-            latestPrice = lastHourlyClose
+        val currentLastHourly = lastHourlyClose
+        if (currentLastHourly != null) {
+            latestPrice = currentLastHourly
         } else {
-            val hourlyFromDb = dao.getCandles(instrumentKey, appWidgetId, PERIOD_HOURLY)
+            val hourlyFromDb = dao.getCandles(instrumentKey, appWidgetId, "1h")
             latestPrice = hourlyFromDb.lastOrNull()?.close ?: 0.0
         }
         Log.d(TAG, "updateSingleWidget: latestPrice=$latestPrice")
@@ -260,7 +234,7 @@ class WidgetUpdateWorker(
         val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
         val labelTextSize = if (isTablet) 29f else 58f
         val commonHeight = (200 * displayMetrics.density).toInt()
-        val useDailyFormat = period == PERIOD_DAILY || period == PERIOD_WEEKLY
+        val useDailyFormat = period != PERIOD_DAY
         
         val bitmap: Bitmap? = if (candlesForRender.isNotEmpty()) {
             if (isSmallWidget) {
@@ -293,7 +267,8 @@ class WidgetUpdateWorker(
         }
 
         // 7. Update the widget (always show hourly price in header)
-        updateWidget(displayName, candlesForRender, bitmap, context, appWidgetId, isSmallWidget, isTablet, period, latestPrice)
+        val investingUrl = instrument.getInvestingUrl(context, appWidgetId)
+        updateWidget(displayName, candlesForRender, bitmap, context, appWidgetId, isSmallWidget, isTablet, period, latestPrice, investingUrl)
         Log.d(TAG, "updateSingleWidget: widget $appWidgetId updated in AppWidgetManager")
     }
 
@@ -315,11 +290,11 @@ class WidgetUpdateWorker(
         private const val DEFAULT_INSTRUMENT_KEY = "STOCK:SBER"
         const val KEY_PERIOD_TOGGLE = "periodToggle"
         const val KEY_INITIAL_LOAD = "initialLoad"
-        private const val DEFAULT_PERIOD = "1h"
-        private const val PERIOD_HOURLY = "1h"
+        private const val DEFAULT_PERIOD = "1d"
+        private const val PERIOD_DAY = "1d"
         private const val PERIOD_WEEKLY = "1w"
-        private const val PERIOD_DAILY = "1d"
-        private val PERIOD_CYCLE = listOf(PERIOD_HOURLY, PERIOD_WEEKLY, PERIOD_DAILY)
+        private const val PERIOD_MONTHLY = "1m"
+        private val PERIOD_CYCLE = listOf(PERIOD_MONTHLY, PERIOD_WEEKLY, PERIOD_DAY)
 
         fun enqueueRefresh(context: Context, instrumentKey: String, appWidgetIds: IntArray, isInitialLoad: Boolean = false) {
             Log.d(TAG, "enqueueRefresh: instrumentKey=$instrumentKey, ids=${appWidgetIds.contentToString()}, isInitialLoad=$isInitialLoad")
@@ -333,6 +308,19 @@ class WidgetUpdateWorker(
                 .build()
             WorkManager.getInstance(context).enqueue(workRequest)
             Log.d(TAG, "enqueueRefresh: work enqueued")
+        }
+
+        fun enqueuePeriodChange(context: Context, appWidgetId: Int, direction: Int) {
+            Log.d(TAG, "enqueuePeriodChange: id=$appWidgetId, direction=$direction")
+            val inputData = androidx.work.Data.Builder()
+                .putIntArray(KEY_APPWIDGET_IDS, intArrayOf(appWidgetId))
+                .putBoolean(KEY_PERIOD_TOGGLE, true)
+                .putInt("direction", direction)
+                .build()
+            val workRequest = OneTimeWorkRequestBuilder<WidgetUpdateWorker>()
+                .setInputData(inputData)
+                .build()
+            WorkManager.getInstance(context).enqueue(workRequest)
         }
 
         fun enqueuePeriodToggle(context: Context, appWidgetIds: IntArray) {
@@ -380,14 +368,17 @@ class WidgetUpdateWorker(
             return value
         }
 
-        private fun togglePeriodForWidget(context: Context, appWidgetId: Int): String {
+        private fun togglePeriodForWidget(context: Context, appWidgetId: Int, direction: Int): String {
             val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
             val key = "period_$appWidgetId"
             val currentPeriod = prefs.getString(key, DEFAULT_PERIOD) ?: DEFAULT_PERIOD
             val currentIndex = PERIOD_CYCLE.indexOf(currentPeriod).coerceAtLeast(0)
-            val newPeriod = PERIOD_CYCLE[(currentIndex + 1) % PERIOD_CYCLE.size]
+            
+            val newIndex = (currentIndex + direction).coerceIn(0, PERIOD_CYCLE.size - 1)
+            val newPeriod = PERIOD_CYCLE[newIndex]
+            
             prefs.edit().putString(key, newPeriod).apply()
-            Log.d(TAG, "Toggled period for widget $appWidgetId: $currentPeriod → $newPeriod")
+            Log.d(TAG, "Toggled period for widget $appWidgetId: $currentPeriod → $newPeriod (dir=$direction)")
             return newPeriod
         }
 
@@ -400,7 +391,8 @@ class WidgetUpdateWorker(
             isSmallWidget: Boolean,
             isTablet: Boolean,
             period: String = DEFAULT_PERIOD,
-            priceHeader: Double = candles.lastOrNull()?.close ?: 0.0
+            priceHeader: Double = candles.lastOrNull()?.close ?: 0.0,
+            investingUrl: String = ""
         ) {
             Log.d(TAG, "updateWidget: id=$appWidgetId, small=$isSmallWidget, price=$priceHeader, candleCount=${candles.size}")
             val layoutRes = if (isSmallWidget) R.layout.widget_layout_small else R.layout.widget_layout
@@ -422,9 +414,9 @@ class WidgetUpdateWorker(
 
             // Set up click handlers (different zones for different actions)
             if (isSmallWidget) {
-                MOEXWidgetProviderSmall.updateWidgetClickHandler(context, remoteViews, appWidgetId)
+                MOEXWidgetProviderSmall.updateWidgetClickHandler(context, remoteViews, appWidgetId, investingUrl)
             } else {
-                MOEXWidgetProvider.updateWidgetClickHandler(context, remoteViews, appWidgetId)
+                MOEXWidgetProvider.updateWidgetClickHandler(context, remoteViews, appWidgetId, investingUrl)
             }
 
             val widgetManager = AppWidgetManager.getInstance(context)
@@ -450,11 +442,16 @@ class WidgetUpdateWorker(
             remoteViews.setTextViewText(R.id.price_text, errorMsg)
             remoteViews.setViewVisibility(R.id.chart_image, android.view.View.GONE)
 
+            val instrumentKey = getInstrumentForWidget(context, appWidgetId)
+            val investingUrl = try { 
+                Instrument.fromKey(instrumentKey).getInvestingUrl(context, appWidgetId) 
+            } catch (e: Exception) { "" }
+
             // Always set up click handlers so widget remains interactive
             if (isSmallWidget) {
-                MOEXWidgetProviderSmall.updateWidgetClickHandler(context, remoteViews, appWidgetId)
+                MOEXWidgetProviderSmall.updateWidgetClickHandler(context, remoteViews, appWidgetId, investingUrl)
             } else {
-                MOEXWidgetProvider.updateWidgetClickHandler(context, remoteViews, appWidgetId)
+                MOEXWidgetProvider.updateWidgetClickHandler(context, remoteViews, appWidgetId, investingUrl)
             }
 
             val widgetManager = AppWidgetManager.getInstance(context)
