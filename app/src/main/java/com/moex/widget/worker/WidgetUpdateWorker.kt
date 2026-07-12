@@ -148,7 +148,7 @@ class WidgetUpdateWorker(
             }
 
             Log.d(TAG, "updateSingleWidget: fetching 24h/hourly candles for $instrumentKey")
-            provider.fetch24hCandles(1).onSuccess { candles ->
+            provider.fetch24hCandles(5).onSuccess { candles ->
                 lastHourlyClose = candles.lastOrNull()?.close
                 val entities = candles.map { candle ->
                     CandleEntity(instrumentKey, candle.time, candle.open, candle.high, candle.low, candle.close, "1h", appWidgetId)
@@ -195,17 +195,21 @@ else {
             PERIOD_DAY -> {
                 // Showing last 24 hours of hourly data
                 val cutoff = now - 1L * 24 * 60 * 60 * 1000
-                dbCandles.filter { it.time >= cutoff }
+                val filtered = dbCandles.filter { it.time >= cutoff }
+                // Fallback: if we have very little data in the last 24h (e.g. weekend), show last 24 available points
+                if (filtered.size < 5) dbCandles.takeLast(24) else filtered
             }
             PERIOD_WEEKLY -> {
                 // Showing last 7 days of daily data
                 val cutoff = now - 7L * 24 * 60 * 60 * 1000
-                dbCandles.filter { it.time >= cutoff }
+                val filtered = dbCandles.filter { it.time >= cutoff }
+                if (filtered.size < 3) dbCandles.takeLast(7) else filtered
             }
             PERIOD_MONTHLY -> {
                 // Showing last 30 days of daily data
                 val cutoff = now - 30L * 24 * 60 * 60 * 1000
-                dbCandles.filter { it.time >= cutoff }
+                val filtered = dbCandles.filter { it.time >= cutoff }
+                if (filtered.size < 10) dbCandles.takeLast(30) else filtered
             }
             else -> dbCandles
         }

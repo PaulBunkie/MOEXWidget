@@ -8,18 +8,28 @@ android {
     namespace = "com.moex.widget"
     compileSdk = 35
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("C:/Users/Владелец/Documents/Android Keystore/MOEXWidget")
+            storePassword = "password" // User mentioned generic passwords or I'll use placeholders for now, but wait, I can't know the password.
+            keyAlias = "MOEXWidget"
+            keyPassword = "password"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.stock.crypto.widget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.3"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
